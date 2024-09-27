@@ -1,0 +1,83 @@
+import boto3
+import csv
+import re
+import pandas as pd
+
+# Initialize AWS Boto3 client for AWS Connect
+client = boto3.client('connect')
+
+# Function to extract ARN and Queue ID patterns from the evaluation column
+def extract_queues(csv_file):
+    pattern = r'(arn:aws:connect:eu-west-\d+:instance\/[\w-]+\/queue\/[\w-]+)'
+    extracted_data = []
+
+    # Read the CSV file
+    df = pd.read_csv(csv_file)
+
+    # Loop through the 'evaluation' column
+    for index, row in df.iterrows():
+        evaluation_text = row['evaluation']
+        matches = re.findall(pattern, evaluation_text)
+        if matches:
+            extracted_data.extend(matches)
+    
+    return extracted_data
+
+# Function to get routing profiles associated with a queue from AWS Connect
+def get_routing_profiles_for_queue(instance_id, queue_id):
+    response = client.list_routing_profiles(
+        InstanceId=instance_id
+    )
+    associated_profiles = []
+    for profile in response['RoutingProfileSummaryList']:
+        profile_id = profile['Id']
+        # Check if the queue is associated with the routing profile
+        profile_queues = client.list_routing_profile_queues(
+            InstanceId=instance_id,
+            RoutingProfileId=profile_id
+        )
+        for queue in profile_queues['RoutingProfileQueueConfigSummaryList']:
+            if queue['QueueId'] == queue_id:
+                associated_profiles.append(profile['Name'])
+    
+    return associated_profiles
+
+# Function to extract instance ID and queue ID from the ARN
+def extract_instance_and_queue_id(arn):
+    pattern = r'instance/([\w-]+)/queue/([\w-]+)'
+    match = re.search(pattern, arn)
+    if match:
+        return match.group(1), match.group(2)
+    return None, None
+
+# Function to list all AWS Connect instances in the account
+def list_connect_instances():
+    response = client.list_instances()
+    instance_ids = [instance['Id'] for instance in response['InstanceSummaryList']]
+    return instance_ids
+
+# Main function to run the script and generate the CSV
+def process_csv(input_csv, output_csv):
+    queue_arns = extract_queues(input_csv)
+    output_data = []
+    
+    # List all instances in the account
+    instances = list_connect_instances()
+
+    for arn in queue_arns:
+        instance_id, queue_id = extract_instance_and_queue_id(arn)
+        if instance_id and queue_id and instance_id in instances:
+            # Get associated routing profiles
+            routing_profiles = get_routing_profiles_for_queue(instance_id, queue_id)
+            output_data.append({'Queue ARN': arn, 'Routing Profiles': ', '.join(routing_profiles)})
+    
+    # Write the result to a new CSV
+    df = pd.DataFrame(output_data)
+    df.to_csv(output_csv, index=False)
+
+# Path to your input and output CSV
+input_csv_path = "/path/to/your/desktop/input.csv"
+output_csv_path = "/path/to/your/desktop/result.csv"
+
+# Run the processing
+process_csv(input_csv_path, output_csv_path)
