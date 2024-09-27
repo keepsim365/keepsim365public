@@ -6,7 +6,7 @@ import pandas as pd
 # Initialize AWS Boto3 client for AWS Connect, specify region
 client = boto3.client('connect', region_name='eu-west-2')
 
-# Function to extract ARN and Queue ID patterns from the evaluation column
+# Function to extract ARN and Queue ID patterns from the 'Evaluations' column
 def extract_queues(csv_file):
     pattern = r'(arn:aws:connect:eu-west-\d+:instance\/[\w-]+\/queue\/[\w-]+)'
     extracted_data = []
@@ -14,9 +14,16 @@ def extract_queues(csv_file):
     # Read the CSV file
     df = pd.read_csv(csv_file)
 
-    # Loop through the 'evaluation' column
+    # Print the column names for debugging
+    print(df.columns)
+
+    # Ensure the 'Evaluations' column exists
+    if 'Evaluations' not in df.columns:
+        raise KeyError("'Evaluations' column not found in the CSV file.")
+    
+    # Loop through the 'Evaluations' column
     for index, row in df.iterrows():
-        evaluation_text = row['evaluation']
+        evaluation_text = row['Evaluations']  # Updated column name
         matches = re.findall(pattern, evaluation_text)
         if matches:
             extracted_data.extend(matches)
