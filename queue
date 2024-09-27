@@ -3,8 +3,8 @@ import csv
 import re
 import pandas as pd
 
-# Initialize AWS Boto3 client for AWS Connect
-client = boto3.client('connect')
+# Initialize AWS Boto3 client for AWS Connect, specify region
+client = boto3.client('connect', region_name='eu-west-2')
 
 # Function to extract ARN and Queue ID patterns from the evaluation column
 def extract_queues(csv_file):
