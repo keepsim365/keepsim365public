@@ -14,9 +14,6 @@ def extract_queues(csv_file):
     # Read the CSV file
     df = pd.read_csv(csv_file)
 
-    # Print the column names for debugging
-    print(df.columns)
-
     # Ensure the 'Evaluations' column exists
     if 'Evaluations' not in df.columns:
         raise KeyError("'Evaluations' column not found in the CSV file.")
@@ -32,21 +29,31 @@ def extract_queues(csv_file):
 
 # Function to get routing profiles associated with a queue from AWS Connect
 def get_routing_profiles_for_queue(instance_id, queue_id):
-    response = client.list_routing_profiles(
-        InstanceId=instance_id
-    )
+    print(f"Fetching routing profiles for Queue ID: {queue_id} in Instance ID: {instance_id}")
+    
+    try:
+        response = client.list_routing_profiles(InstanceId=instance_id)
+        print(f"Response for instance {instance_id}: {response}")  # Print API response
+    except Exception as e:
+        print(f"Error in fetching routing profiles for instance {instance_id}: {str(e)}")
+        return []
+    
     associated_profiles = []
     for profile in response['RoutingProfileSummaryList']:
         profile_id = profile['Id']
         # Check if the queue is associated with the routing profile
-        profile_queues = client.list_routing_profile_queues(
-            InstanceId=instance_id,
-            RoutingProfileId=profile_id
-        )
-        for queue in profile_queues['RoutingProfileQueueConfigSummaryList']:
-            if queue['QueueId'] == queue_id:
-                associated_profiles.append(profile['Name'])
-    
+        try:
+            profile_queues = client.list_routing_profile_queues(
+                InstanceId=instance_id,
+                RoutingProfileId=profile_id
+            )
+            print(f"Queues in routing profile {profile_id}: {profile_queues}")  # Print API response
+            for queue in profile_queues['RoutingProfileQueueConfigSummaryList']:
+                if queue['QueueId'] == queue_id:
+                    associated_profiles.append(profile['Name'])
+        except Exception as e:
+            print(f"Error in fetching queues for profile {profile_id}: {str(e)}")
+
     return associated_profiles
 
 # Function to extract instance ID and queue ID from the ARN
@@ -59,9 +66,14 @@ def extract_instance_and_queue_id(arn):
 
 # Function to list all AWS Connect instances in the account
 def list_connect_instances():
-    response = client.list_instances()
-    instance_ids = [instance['Id'] for instance in response['InstanceSummaryList']]
-    return instance_ids
+    try:
+        response = client.list_instances()
+        print(f"Instances: {response}")  # Print the instances fetched
+        instance_ids = [instance['Id'] for instance in response['InstanceSummaryList']]
+        return instance_ids
+    except Exception as e:
+        print(f"Error in fetching instances: {str(e)}")
+        return []
 
 # Main function to run the script and generate the CSV
 def process_csv(input_csv, output_csv):
@@ -76,11 +88,13 @@ def process_csv(input_csv, output_csv):
         if instance_id and queue_id and instance_id in instances:
             # Get associated routing profiles
             routing_profiles = get_routing_profiles_for_queue(instance_id, queue_id)
+            print(f"Routing profiles for Queue {queue_id}: {routing_profiles}")  # Print routing profiles found
             output_data.append({'Queue ARN': arn, 'Routing Profiles': ', '.join(routing_profiles)})
     
     # Write the result to a new CSV
     df = pd.DataFrame(output_data)
     df.to_csv(output_csv, index=False)
+    print(f"Results written to {output_csv}")
 
 # Path to your input and output CSV
 input_csv_path = "/path/to/your/desktop/input.csv"
