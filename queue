@@ -1,1 +1,150 @@
+import boto3
+import csv
 
+# Initialize the boto3 client for Amazon Connect
+client = boto3.client('connect')
+
+# Set your instance ID
+instance_id = 'f79038c8-1351-4813-94bf-5c06cfcbf09f'  # Replace with your actual instance ID
+
+input_csv = 'input.csv'
+output_csv = 'output.csv'
+
+def get_routing_profile_id_by_name(instance_id, routing_profile_name):
+    # Fetch routing profiles
+    try:
+        paginator = client.get_paginator('list_routing_profiles')
+        page_iterator = paginator.paginate(InstanceId=instance_id)
+        
+        # Iterate through all pages
+        for page in page_iterator:
+            for profile in page['RoutingProfileSummaryList']:
+                if profile['Name'] == routing_profile_name:
+                    return profile['Id']
+        print(f"Routing profile '{routing_profile_name}' not found.")
+        return None
+    except Exception as e:
+        print(f"Error fetching routing profiles: {str(e)}")
+        return None
+
+def get_queues_from_routing_profile(instance_id, routing_profile_id):
+    try:
+        paginator = client.get_paginator('list_routing_profile_queues')
+        page_iterator = paginator.paginate(
+            InstanceId=instance_id,
+            RoutingProfileId=routing_profile_id
+        )
+
+        queue_ids = []
+        # Iterate through all pages
+        for page in page_iterator:
+            queue_configs = page.get('RoutingProfileQueueConfigSummaryList', [])
+            for config in queue_configs:
+                queue_ids.append(config['QueueId'])
+
+        return queue_ids
+
+    except Exception as e:
+        print(f"Error fetching routing profile queues: {str(e)}")
+        return []
+
+def get_queue_names(instance_id, queue_ids):
+    try:
+        queue_names = []
+        for queue_id in queue_ids:
+            response = client.describe_queue(
+                InstanceId=instance_id,
+                QueueId=queue_id
+            )
+            queue_names.append({
+                'QueueId': queue_id,
+                'QueueName': response['Queue']['Name']
+            })
+        return queue_names
+    except Exception as e:
+        print(f"Error fetching queue names: {str(e)}")
+        return []
+
+def read_routing_profiles_from_csv(filename):
+    try:
+        with open(filename, mode='r', newline='') as file:
+            reader = csv.reader(file)
+            routing_profiles = []
+            for row in reader:
+                for profile in row:
+                    routing_profiles.append(profile.strip())
+            return routing_profiles
+    except Exception as e:
+        print(f"Error reading input CSV: {str(e)}")
+        return []
+
+def write_to_csv(data, filename):
+    # Write the data to a CSV file
+    try:
+        with open(filename, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            for entry in data:
+                routing_profile_name = entry['RoutingProfileName']
+                queues = entry['Queues']
+                # Write the routing profile name as the first row
+                writer.writerow([routing_profile_name])
+                # Write the header
+                writer.writerow(['QueueId', 'QueueName'])
+                # Write the queues
+                for queue in queues:
+                    writer.writerow([queue['QueueId'], queue['QueueName']])
+                # Add an empty row between routing profiles
+                writer.writerow([])
+        print(f"Data successfully written to {filename}")
+    except Exception as e:
+        print(f"Error writing to CSV: {str(e)}")
+
+def main():
+    # Step 1: Read routing profile names from input.csv
+    routing_profile_names = read_routing_profiles_from_csv(input_csv)
+    
+    if not routing_profile_names:
+        print("No routing profiles found in input.csv or an error occurred.")
+        return
+
+    # Collect data for output
+    output_data = []
+
+    for routing_profile_name in routing_profile_names:
+        # Step 2: Get the Routing Profile ID by name
+        routing_profile_id = get_routing_profile_id_by_name(instance_id, routing_profile_name)
+        
+        if routing_profile_id:
+            print(f"Routing Profile ID for '{routing_profile_name}': {routing_profile_id}")
+
+            # Step 3: Get queues from the routing profile
+            queue_ids = get_queues_from_routing_profile(instance_id, routing_profile_id)
+            
+            if queue_ids:
+                # Step 4: Fetch queue names
+                queues = get_queue_names(instance_id, queue_ids)
+                # Add to output data
+                output_data.append({
+                    'RoutingProfileName': routing_profile_name,
+                    'Queues': queues
+                })
+            else:
+                print(f"No queues associated with Routing Profile '{routing_profile_name}'.")
+                # Add to output data with empty queues
+                output_data.append({
+                    'RoutingProfileName': routing_profile_name,
+                    'Queues': []
+                })
+        else:
+            print(f"Routing Profile '{routing_profile_name}' not found or an error occurred.")
+            # Optionally, you can decide whether to add this to output_data or not
+
+    # Step 5: Write to CSV
+    if output_data:
+        write_to_csv(output_data, output_csv)
+    else:
+        print("No data to write to output CSV.")
+
+# Run the main function
+if __name__ == "__main__":
+    main()
