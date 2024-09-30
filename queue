@@ -62,14 +62,23 @@ def get_queue_names(instance_id, queue_ids):
         print(f"Error fetching queue names: {str(e)}")
         return {}
 
-def get_users(instance_id):
+def get_users_with_routing_profile(instance_id):
     try:
         paginator = client.get_paginator('list_users')
         page_iterator = paginator.paginate(InstanceId=instance_id)
 
         users = []
         for page in page_iterator:
-            users.extend(page.get('UserSummaryList', []))
+            user_summaries = page.get('UserSummaryList', [])
+            for user_summary in user_summaries:
+                user_id = user_summary['Id']
+                # Get detailed user information
+                user_response = client.describe_user(
+                    InstanceId=instance_id,
+                    UserId=user_id
+                )
+                user = user_response['User']
+                users.append(user)
         return users
     except Exception as e:
         print(f"Error fetching users: {str(e)}")
@@ -118,7 +127,7 @@ def main():
         return
 
     # Step 2: Get all users and map them to their routing profiles
-    users = get_users(instance_id)
+    users = get_users_with_routing_profile(instance_id)
     routing_profile_users = {}  # Mapping of routing profile ID to list of user IDs
     for user in users:
         user_id = user['Id']
