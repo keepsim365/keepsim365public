@@ -1,1 +1,189 @@
+def get_routing_profile_id_by_name(instance_id, routing_profile_name):
+    # Fetch routing profiles
+    try:
+        paginator = client.get_paginator('list_routing_profiles')
+        page_iterator = paginator.paginate(InstanceId=instance_id)
+        
+        # Iterate through all pages
+        for page in page_iterator:
+            for profile in page['RoutingProfileSummaryList']:
+                if profile['Name'] == routing_profile_name:
+                    return profile['Id']
+        print(f"Routing profile '{routing_profile_name}' not found.")
+        return None
+    except Exception as e:
+        print(f"Error fetching routing profiles: {str(e)}")
+        return None
 
+def get_queues_from_routing_profile(instance_id, routing_profile_id):
+    try:
+        paginator = client.get_paginator('list_routing_profile_queues')
+        page_iterator = paginator.paginate(
+            InstanceId=instance_id,
+            RoutingProfileId=routing_profile_id
+        )
+
+        queue_ids = []
+        # Iterate through all pages
+        for page in page_iterator:
+            queue_configs = page.get('RoutingProfileQueueConfigSummaryList', [])
+            for config in queue_configs:
+                queue_ids.append(config['QueueId'])
+
+        return queue_ids
+
+    except Exception as e:
+        print(f"Error fetching routing profile queues: {str(e)}")
+        return []
+
+def get_queue_names(instance_id, queue_ids):
+    try:
+        queue_names = {}
+        for queue_id in queue_ids:
+            response = client.describe_queue(
+                InstanceId=instance_id,
+                QueueId=queue_id
+            )
+            queue_names[queue_id] = response['Queue']['Name']
+        return queue_names
+    except Exception as e:
+        print(f"Error fetching queue names: {str(e)}")
+        return {}
+
+def get_users_with_routing_profile(instance_id):
+    try:
+        paginator = client.get_paginator('list_users')
+        page_iterator = paginator.paginate(InstanceId=instance_id)
+
+        users = []
+        for page in page_iterator:
+            user_summaries = page.get('UserSummaryList', [])
+            for user_summary in user_summaries:
+                user_id = user_summary['Id']
+                # Get detailed user information
+                user_response = client.describe_user(
+                    InstanceId=instance_id,
+                    UserId=user_id
+                )
+                user = user_response['User']
+                users.append(user)
+        return users
+    except Exception as e:
+        print(f"Error fetching users: {str(e)}")
+        return []
+
+def read_routing_profiles_from_csv(filename):
+    try:
+        with open(filename, mode='r', newline='') as file:
+            reader = csv.reader(file)
+            routing_profiles = []
+            for row in reader:
+                for profile in row:
+                    routing_profiles.append(profile.strip())
+            return routing_profiles
+    except Exception as e:
+        print(f"Error reading input CSV: {str(e)}")
+        return []
+
+def write_to_csv(data, filename):
+    # Write the data to a CSV file
+    try:
+        with open(filename, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            for entry in data:
+                routing_profile_name = entry['RoutingProfileName']
+                queues = entry['Queues']
+                # Write the routing profile name as the first row
+                writer.writerow([routing_profile_name])
+                # Write the header
+                writer.writerow(['QueueId', 'QueueName', 'NumberOfAgents'])
+                # Write the queues
+                for queue in queues:
+                    writer.writerow([queue['QueueId'], queue['QueueName'], queue['NumberOfAgents']])
+                # Add an empty row between routing profiles
+                writer.writerow([])
+            print(f"Data successfully written to {filename}")
+    except Exception as e:
+        print(f"Error writing to CSV: {str(e)}")
+
+def main():
+    # Step 1: Read routing profile names from input.csv
+    routing_profile_names = read_routing_profiles_from_csv(input_csv)
+    
+    if not routing_profile_names:
+        print("No routing profiles found in input.csv or an error occurred.")
+        return
+
+    # Step 2: Get all users and map them to their routing profiles
+    users = get_users_with_routing_profile(instance_id)
+    routing_profile_users = {}  # Mapping of routing profile ID to list of user IDs
+    for user in users:
+        user_id = user['Id']
+        routing_profile_id = user['RoutingProfileId']
+        if routing_profile_id not in routing_profile_users:
+            routing_profile_users[routing_profile_id] = []
+        routing_profile_users[routing_profile_id].append(user_id)
+
+    # Collect data for output
+    output_data = []
+
+    # Keep track of agents associated with each queue
+    queue_agents = {}  # Mapping of queue ID to set of agent IDs
+    queue_names_global = {}  # Global mapping of queue IDs to names
+
+    for routing_profile_name in routing_profile_names:
+        # Step 3: Get the Routing Profile ID by name
+        routing_profile_id = get_routing_profile_id_by_name(instance_id, routing_profile_name)
+        
+        if routing_profile_id:
+            print(f"Routing Profile ID for '{routing_profile_name}': {routing_profile_id}")
+
+            # Step 4: Get queues from the routing profile
+            queue_ids = get_queues_from_routing_profile(instance_id, routing_profile_id)
+            
+            # Step 5: Get agents assigned to the routing profile
+            agents_in_profile = routing_profile_users.get(routing_profile_id, [])
+
+            if queue_ids:
+                # Step 6: Fetch queue names
+                queue_names = get_queue_names(instance_id, queue_ids)
+                # Update global queue names mapping
+                queue_names_global.update(queue_names)
+                # Update queue_agents mapping
+                for queue_id in queue_ids:
+                    if queue_id not in queue_agents:
+                        queue_agents[queue_id] = set()
+                    queue_agents[queue_id].update(agents_in_profile)
+                # Prepare data for output
+                queues_data = []
+                for queue_id in queue_ids:
+                    queues_data.append({
+                        'QueueId': queue_id,
+                        'QueueName': queue_names[queue_id],
+                        'NumberOfAgents': len(queue_agents[queue_id])
+                    })
+                # Add to output data
+                output_data.append({
+                    'RoutingProfileName': routing_profile_name,
+                    'Queues': queues_data
+                })
+            else:
+                print(f"No queues associated with Routing Profile '{routing_profile_name}'.")
+                # Add to output data with empty queues
+                output_data.append({
+                    'RoutingProfileName': routing_profile_name,
+                    'Queues': []
+                })
+        else:
+            print(f"Routing Profile '{routing_profile_name}' not found or an error occurred.")
+            # Optionally, you can decide whether to add this to output_data or not
+
+    # Step 7: Write to CSV
+    if output_data:
+        write_to_csv(output_data, output_csv)
+    else:
+        print("No data to write to output CSV.")
+
+# Run the main function
+if __name__ == "__main__":
+    main()
