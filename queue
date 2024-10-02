@@ -1,1 +1,116 @@
+import boto3
+import csv
+import time
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from botocore.exceptions import ClientError, NoCredentialsError
+
+# Setup logging
+logging.basicConfig(filename='aws_connect_security_profile_update.log', level=logging.INFO)
+
+# Initialize AWS Connect client
+connect_client = boto3.client('connect')
+
+# Constants
+INSTANCE_ID = 'your_instance_id'  # Replace with your Connect instance ID
+NEW_SECURITY_PROFILE_NAME = 'Video Colleague'
+MAX_TPS = 5  # Transactions per second
+CSV_INPUT_FILE = 'input.csv'
+
+# Function to get user details (including security profile)
+def get_user_security_profiles(username, connect_user_id):
+    try:
+        response = connect_client.describe_user(
+            InstanceId=INSTANCE_ID,
+            UserId=connect_user_id
+        )
+        current_profiles = response['User']['SecurityProfileIds']
+        return current_profiles
+    except (ClientError, NoCredentialsError) as e:
+        logging.error(f"Failed to get security profiles for {username}: {str(e)}")
+        return None
+
+# Function to list all security profiles and get the ID of the required profile
+def get_security_profile_id_by_name(profile_name):
+    try:
+        response = connect_client.list_security_profiles(InstanceId=INSTANCE_ID)
+        for profile in response['SecurityProfileSummaryList']:
+            if profile['Name'] == profile_name:
+                return profile['Id']
+    except (ClientError, NoCredentialsError) as e:
+        logging.error(f"Error fetching security profile ID for {profile_name}: {str(e)}")
+        return None
+
+# Function to update security profile for a user
+def update_security_profiles(username, connect_user_id, current_profiles):
+    new_profile_id = get_security_profile_id_by_name(NEW_SECURITY_PROFILE_NAME)
+    if not new_profile_id:
+        logging.error(f"Security profile {NEW_SECURITY_PROFILE_NAME} not found.")
+        return False, current_profiles
+
+    if new_profile_id in current_profiles:
+        logging.info(f"User {username} already has the {NEW_SECURITY_PROFILE_NAME} profile.")
+        return True, current_profiles
+
+    # Add the new profile
+    updated_profiles = current_profiles + [new_profile_id]
+
+    try:
+        connect_client.update_user_security_profiles(
+            InstanceId=INSTANCE_ID,
+            UserId=connect_user_id,
+            SecurityProfileIds=updated_profiles
+        )
+        logging.info(f"Successfully updated security profiles for {username}.")
+        return True, updated_profiles
+    except (ClientError, NoCredentialsError) as e:
+        logging.error(f"Failed to update security profiles for {username}: {str(e)}")
+        return False, current_profiles
+
+# Function to process each row in CSV
+def process_row(row):
+    username = row['username']
+    connect_user_id = row['connect_user_id']
+
+    current_profiles = get_user_security_profiles(username, connect_user_id)
+    if current_profiles is None:
+        return {**row, 'updated_status': 'Failed', 'before_profiles': 'Error', 'after_profiles': 'Error'}
+
+    success, updated_profiles = update_security_profiles(username, connect_user_id, current_profiles)
+    
+    return {
+        **row,
+        'updated_status': 'Success' if success else 'Failed',
+        'before_profiles': ','.join(current_profiles),
+        'after_profiles': ','.join(updated_profiles)
+    }
+
+# Function to handle CSV reading and writing
+def update_csv_file(input_file):
+    with open(input_file, mode='r') as file:
+        reader = csv.DictReader(file)
+        rows = list(reader)
+
+    updated_rows = []
+
+    # Using ThreadPoolExecutor to process multiple rows at once
+    with ThreadPoolExecutor(max_workers=MAX_TPS) as executor:
+        futures = {executor.submit(process_row, row): row for row in rows}
+        for future in as_completed(futures):
+            updated_rows.append(future.result())
+
+    # Writing back to the same CSV file
+    fieldnames = list(updated_rows[0].keys())
+    with open(input_file, mode='w', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(updated_rows)
+
+# Main execution
+if __name__ == '__main__':
+    try:
+        update_csv_file(CSV_INPUT_FILE)
+        logging.info("CSV processing and security profile updates completed.")
+    except Exception as e:
+        logging.error(f"An error occurred during the process: {str(e)}")
 
