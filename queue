@@ -14,8 +14,8 @@ json_folder = r'C:\Users\g48430250\Desktop\code\0210 Connect Backup Data\0210 Co
 # Output CSV file
 output_csv = 'output_data.csv'
 
-# Columns for the CSV
-csv_columns = ['id', 'name', 'email']  # Modify based on the structure of your JSON files
+# Columns for the CSV (adjust based on JSON structure)
+csv_columns = ['id', 'first_name', 'last_name', 'username', 'phone_type', 'routing_profile', 'tags']
 
 def process_json_files():
     data_rows = []
@@ -30,25 +30,32 @@ def process_json_files():
                 with open(filepath, 'r') as json_file:
                     try:
                         data = json.load(json_file)
-                        print(f"Processing file: {filename}")  # Print filename for debugging
-                        print(data)  # Print the content of the JSON file to verify its structure
+                        print(f"Processing file: {filename}")  # Debugging
 
-                        if not data:
-                            logging.warning(f'{filename} is empty or invalid JSON.')
+                        # Ensure 'users' key exists in the JSON
+                        if 'users' not in data:
+                            logging.warning(f"Missing 'users' key in {filename}")
                             continue
 
-                        # Extract relevant fields (adjust as per your JSON structure)
-                        row = {
-                            'id': data.get('id', ''),
-                            'name': data.get('name', ''),
-                            'email': data.get('email', '')
-                        }
+                        # Loop through each user in the 'users' list
+                        for user in data['users']:
+                            # Extract relevant fields (adjust based on the actual structure)
+                            row = {
+                                'id': user.get('id', ''),
+                                'first_name': user.get('IdentityInfo', {}).get('FirstName', ''),
+                                'last_name': user.get('IdentityInfo', {}).get('LastName', ''),
+                                'username': user.get('Username', ''),
+                                'phone_type': user.get('PhoneConfig', {}).get('PhoneType', ''),
+                                'routing_profile': user.get('RoutingProfileId', ''),
+                                'tags': user.get('Tags', {}).get('Retail Voice', '')  # Adjust if more tags needed
+                            }
 
-                        # Check if required fields are missing and log a warning
-                        if 'id' not in data or 'name' not in data or 'email' not in data:
-                            logging.warning(f'Missing fields in {filename}: {data}')
+                            # Append the row if the required fields are found
+                            if row['id'] and row['username']:
+                                data_rows.append(row)
+                            else:
+                                logging.warning(f"Missing required fields in {filename}")
 
-                        data_rows.append(row)
                         logging.info(f'Successfully processed {filename}')
                     except json.JSONDecodeError as e:
                         logging.error(f'Error decoding JSON from {filename}: {e}')
@@ -60,10 +67,10 @@ def process_json_files():
 
             if data_rows:
                 writer.writerows(data_rows)
-                print(f"Data written to {output_csv}: {data_rows}")  # Debug print to check if rows are written
+                print(f"Data written to {output_csv}: {data_rows}")  # Debugging
                 logging.info(f'Successfully wrote data to {output_csv}')
             else:
-                print("No data rows to write.")  # Debug print to see if data_rows is empty
+                print("No data rows to write.")  # Debugging
                 logging.warning('No data rows found to write to CSV.')
     except Exception as e:
         logging.error(f'Error processing files: {e}')
