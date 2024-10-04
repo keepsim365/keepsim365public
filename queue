@@ -14,8 +14,8 @@ json_folder = r'C:\Users\g48430250\Desktop\code\0210 Connect Backup Data\0210 Co
 # Output CSV file
 output_csv = 'output_data.csv'
 
-# Columns for the CSV
-csv_columns = ['id', 'first_name', 'last_name', 'username', 'phone_type', 'routing_profile', 'tags']
+# Columns for the CSV (adjust based on JSON structure)
+csv_columns = ['id', 'first_name', 'last_name', 'username', 'phone_type', 'routing_profile', 'retail_voice']
 
 def process_json_files():
     data_rows = []
@@ -39,17 +39,15 @@ def process_json_files():
 
                         # Loop through each user in the 'users' list
                         for user in data['users']:
-                            print(f"\nUser Data: {user}")  # Print each user object for debugging
-
-                            # Extract relevant fields (adjust based on the actual structure)
+                            # Extract relevant fields (based on the structure)
                             row = {
-                                'id': user.get('id', ''),
+                                'id': user.get('Id', ''),
                                 'first_name': user.get('IdentityInfo', {}).get('FirstName', ''),
                                 'last_name': user.get('IdentityInfo', {}).get('LastName', ''),
                                 'username': user.get('Username', ''),
                                 'phone_type': user.get('PhoneConfig', {}).get('PhoneType', ''),
                                 'routing_profile': user.get('RoutingProfileId', ''),
-                                'tags': user.get('Tags', {}).get('Retail Voice', '')  # Adjust if more tags needed
+                                'retail_voice': user.get('Tags', {}).get('Retail Voice', '')  # Adjust for more tags if needed
                             }
 
                             print(f"Extracted Row: {row}")  # Debugging print to see extracted fields
