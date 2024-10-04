@@ -14,7 +14,7 @@ json_folder = r'C:\Users\g48430250\Desktop\code\0210 Connect Backup Data\0210 Co
 # Output CSV file
 output_csv = 'output_data.csv'
 
-# Columns for the CSV (adjust based on JSON structure)
+# Columns for the CSV
 csv_columns = ['id', 'first_name', 'last_name', 'username', 'phone_type', 'routing_profile', 'tags']
 
 def process_json_files():
@@ -30,7 +30,7 @@ def process_json_files():
                 with open(filepath, 'r') as json_file:
                     try:
                         data = json.load(json_file)
-                        print(f"Processing file: {filename}")  # Debugging
+                        print(f"\nProcessing file: {filename}")  # Debugging
 
                         # Ensure 'users' key exists in the JSON
                         if 'users' not in data:
@@ -39,6 +39,8 @@ def process_json_files():
 
                         # Loop through each user in the 'users' list
                         for user in data['users']:
+                            print(f"\nUser Data: {user}")  # Print each user object for debugging
+
                             # Extract relevant fields (adjust based on the actual structure)
                             row = {
                                 'id': user.get('id', ''),
@@ -49,6 +51,8 @@ def process_json_files():
                                 'routing_profile': user.get('RoutingProfileId', ''),
                                 'tags': user.get('Tags', {}).get('Retail Voice', '')  # Adjust if more tags needed
                             }
+
+                            print(f"Extracted Row: {row}")  # Debugging print to see extracted fields
 
                             # Append the row if the required fields are found
                             if row['id'] and row['username']:
