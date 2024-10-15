@@ -1,1 +1,37 @@
+import boto3
+import datetime
+
+# Initialize the CloudTrail client
+client = boto3.client('cloudtrail')
+
+# Set the date range for the past month
+end_time = datetime.datetime.now()
+start_time = end_time - datetime.timedelta(days=30)
+
+# Set your AWS region
+aws_region = 'eu-west-2'
+
+# Query CloudTrail events for "DuplicateResourceException" error in the last month
+response = client.lookup_events(
+    LookupAttributes=[
+        {
+            'AttributeKey': 'EventName',
+            'AttributeValue': 'AssociateUserProficiencies'  # This is the event you are querying
+        }
+    ],
+    StartTime=start_time,
+    EndTime=end_time,
+    MaxResults=50
+)
+
+# Filter events with the "DuplicateResourceException" error
+for event in response['Events']:
+    if 'DuplicateResourceException' in event['CloudTrailEvent']:
+        print(f"Event ID: {event['EventId']}")
+        print(f"Event Name: {event['EventName']}")
+        print(f"Event Time: {event['EventTime']}")
+        print(f"Username: {event['Username']}")
+        print(f"CloudTrail Event: {event['CloudTrailEvent']}")
+        print('-' * 60)
+
 
