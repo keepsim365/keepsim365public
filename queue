@@ -1,5 +1,6 @@
 import boto3
 import datetime
+import json
 
 # Initialize the CloudTrail client
 client = boto3.client('cloudtrail')
@@ -11,12 +12,15 @@ start_time = end_time - datetime.timedelta(days=30)
 # Set your AWS region
 aws_region = 'eu-west-2'
 
-# Query CloudTrail events for "DuplicateResourceException" error in the last month
+# Define the log file name
+log_file_name = 'duplicate_resource_exceptions.log'
+
+# Query CloudTrail events for "AssociateUserProficiencies" in the last month
 response = client.lookup_events(
     LookupAttributes=[
         {
             'AttributeKey': 'EventName',
-            'AttributeValue': 'AssociateUserProficiencies'  # This is the event you are querying
+            'AttributeValue': 'AssociateUserProficiencies'
         }
     ],
     StartTime=start_time,
@@ -24,14 +28,25 @@ response = client.lookup_events(
     MaxResults=50
 )
 
-# Filter events with the "DuplicateResourceException" error
-for event in response['Events']:
-    if 'DuplicateResourceException' in event['CloudTrailEvent']:
-        print(f"Event ID: {event['EventId']}")
-        print(f"Event Name: {event['EventName']}")
-        print(f"Event Time: {event['EventTime']}")
-        print(f"Username: {event['Username']}")
-        print(f"CloudTrail Event: {event['CloudTrailEvent']}")
-        print('-' * 60)
+# Open the log file to write the results
+with open(log_file_name, 'w') as log_file:
+    for event in response['Events']:
+        cloudtrail_event = json.loads(event['CloudTrailEvent'])
+        
+        # Check if the error "DuplicateResourceException" exists in the event
+        if 'errorCode' in cloudtrail_event and cloudtrail_event['errorCode'] == 'DuplicateResourceException':
+            log_data = {
+                "Event ID": event['EventId'],
+                "Event Name": event['EventName'],
+                "Event Time": str(event['EventTime']),
+                "Username": event['Username'],
+                "Error Code": cloudtrail_event['errorCode'],
+                "Error Message": cloudtrail_event.get('errorMessage', 'No error message'),
+                "CloudTrail Event": cloudtrail_event
+            }
+            
+            # Write the event details to the log file
+            log_file.write(json.dumps(log_data, indent=4))
+            log_file.write('\n' + '-' * 60 + '\n')
 
-
+print(f"Log file written: {log_file_name}")
