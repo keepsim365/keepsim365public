@@ -1,52 +1,84 @@
 import boto3
 import datetime
 import json
+import os
 
-# Initialize the CloudTrail client
-client = boto3.client('cloudtrail')
+def main():
+    # Initialize the CloudTrail client
+    client = boto3.client('cloudtrail', region_name='eu-west-2')  # Update region if necessary
 
-# Set the date range for the past month
-end_time = datetime.datetime.now()
-start_time = end_time - datetime.timedelta(days=30)
+    # Set the date range for the past month
+    end_time = datetime.datetime.now(datetime.timezone.utc)
+    start_time = end_time - datetime.timedelta(days=30)
 
-# Set your AWS region
-aws_region = 'eu-west-2'
+    # Define the errors to filter
+    error_codes = ['DuplicateResourceException', 'TooManyRequestsException']
 
-# Define the log file name
-log_file_name = 'duplicate_resource_exceptions.log'
+    # Define the log file name and path (same directory as the script)
+    script_directory = os.path.dirname(os.path.abspath(__file__))
+    log_file_name = 'resource_exceptions.log'
+    log_file_path = os.path.join(script_directory, log_file_name)
 
-# Query CloudTrail events for "AssociateUserProficiencies" in the last month
-response = client.lookup_events(
-    LookupAttributes=[
-        {
-            'AttributeKey': 'EventName',
-            'AttributeValue': 'AssociateUserProficiencies'
-        }
-    ],
-    StartTime=start_time,
-    EndTime=end_time,
-    MaxResults=50
-)
+    # Initialize pagination variables
+    next_token = None
+    max_results = 50  # Maximum allowed by CloudTrail per request
 
-# Open the log file to write the results
-with open(log_file_name, 'w') as log_file:
-    for event in response['Events']:
-        cloudtrail_event = json.loads(event['CloudTrailEvent'])
-        
-        # Check if the error "DuplicateResourceException" exists in the event
-        if 'errorCode' in cloudtrail_event and cloudtrail_event['errorCode'] == 'DuplicateResourceException':
-            log_data = {
-                "Event ID": event['EventId'],
-                "Event Name": event['EventName'],
-                "Event Time": str(event['EventTime']),
-                "Username": event['Username'],
-                "Error Code": cloudtrail_event['errorCode'],
-                "Error Message": cloudtrail_event.get('errorMessage', 'No error message'),
-                "CloudTrail Event": cloudtrail_event
+    # Open the log file in write mode
+    with open(log_file_path, 'w') as log_file:
+        log_file.write(f"DuplicateResourceException and TooManyRequestsException Events from {start_time} to {end_time}\n")
+        log_file.write('=' * 80 + '\n\n')
+
+        while True:
+            # Prepare the lookup_events parameters
+            lookup_params = {
+                'LookupAttributes': [
+                    {
+                        'AttributeKey': 'EventName',
+                        'AttributeValue': 'AssociateUserProficiencies'  # Update if different
+                    }
+                ],
+                'StartTime': start_time,
+                'EndTime': end_time,
+                'MaxResults': max_results
             }
-            
-            # Write the event details to the log file
-            log_file.write(json.dumps(log_data, indent=4))
-            log_file.write('\n' + '-' * 60 + '\n')
 
-print(f"Log file written: {log_file_name}")
+            if next_token:
+                lookup_params['NextToken'] = next_token
+
+            # Query CloudTrail events
+            response = client.lookup_events(**lookup_params)
+
+            # Process each event
+            for event in response.get('Events', []):
+                try:
+                    cloudtrail_event = json.loads(event['CloudTrailEvent'])
+                except json.JSONDecodeError:
+                    # Skip events with invalid JSON
+                    continue
+
+                error_code = cloudtrail_event.get('errorCode')
+
+                if error_code in error_codes:
+                    log_data = {
+                        "Event ID": event.get('EventId'),
+                        "Event Name": event.get('EventName'),
+                        "Event Time": str(event.get('EventTime')),
+                        "Username": event.get('Username'),
+                        "Error Code": error_code,
+                        "Error Message": cloudtrail_event.get('errorMessage', 'No error message'),
+                        "CloudTrail Event": cloudtrail_event
+                    }
+
+                    # Write the event details to the log file
+                    log_file.write(json.dumps(log_data, indent=4))
+                    log_file.write('\n' + '-' * 80 + '\n\n')
+
+            # Check if there are more events to fetch
+            next_token = response.get('NextToken')
+            if not next_token:
+                break
+
+    print(f"Log file written: {log_file_path}")
+
+if __name__ == "__main__":
+    main()
