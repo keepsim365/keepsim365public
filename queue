@@ -1,1 +1,83 @@
+import boto3
+import pandas as pd
 
+# Initialize AWS Connect client using boto3
+connect = boto3.client('connect', region_name='eu-west-2 ')  # Replace 'your-region' with the actual AWS region, e.g., 'eu-west-2'
+
+# Your Connect instance ID
+instance_id = ''
+
+def get_user_info(user_id):
+    # Get user details
+    user = connect.describe_user(InstanceId=instance_id, UserId=user_id)
+    return user['User']
+
+def get_routing_profile(profile_id):
+    # Get routing profile details
+    profile = connect.describe_routing_profile(InstanceId=instance_id, RoutingProfileId=profile_id)
+    return profile['RoutingProfile']
+
+def get_user_queue(routing_profile_id):
+    # Get associated queues for the routing profile
+    queues = connect.list_routing_profile_queues(InstanceId=instance_id, RoutingProfileId=routing_profile_id)
+    return queues['RoutingProfileQueueConfigList']
+
+def export_user_data():
+    # Read from input.csv in the same folder as the script
+    input_file = 'input.csv'
+    user_df = pd.read_csv(input_file)
+    
+    # Assuming the CSV has a column named 'Username'
+    user_list = user_df['Username'].tolist()
+    
+    data = []
+    invalid_users = []  # To store invalid users
+
+    for user_id in user_list:
+        try:
+            # Retrieve user details
+            user_info = get_user_info(user_id)
+            
+            # Extract user details
+            username = user_info['Username']
+            routing_profile_id = user_info['RoutingProfileId']
+            security_profile_ids = user_info['SecurityProfileIds']
+            
+            # Get routing profile details
+            routing_profile = get_routing_profile(routing_profile_id)
+            routing_profile_name = routing_profile['Name']
+            
+            # Get queue associated with the routing profile
+            queues = get_user_queue(routing_profile_id)
+            queue_names = [queue['QueueReference']['Name'] for queue in queues]
+            
+            # Add to data
+            data.append({
+                'Username': username,
+                'RoutingProfile': routing_profile_name,
+                'Queues': ', '.join(queue_names),
+                'SecurityProfiles': ', '.join(security_profile_ids)  # Assuming this is the ID for simplicity
+            })
+        
+        except Exception as e:
+            # Log detailed error information
+            print(f"Error processing user {user_id}: {e}")
+            if hasattr(e, 'response'):
+                print(f"Detailed error: {e.response['Error']['Code']} - {e.response['Error']['Message']}")
+            invalid_users.append(user_id)
+            continue
+    
+    # Create Excel output
+    df = pd.DataFrame(data)
+    output_file = 'user_data_output.xlsx'
+    df.to_excel(output_file, index=False)
+    
+    # Log invalid users if any
+    if invalid_users:
+        print(f"Invalid users: {', '.join(invalid_users)}")
+    
+    print(f"Data exported successfully to {output_file}.")
+
+# Run the function
+if __name__ == "__main__":
+    export_user_data()
