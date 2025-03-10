@@ -1,83 +1,416 @@
+from flask import Flask, Response, request, jsonify
 import boto3
-import pandas as pd
+import os
+import json
 
-# Initialize AWS Connect client using boto3
-connect = boto3.client('connect', region_name='eu-west-2 ')  # Replace 'your-region' with the actual AWS region, e.g., 'eu-west-2'
+app = Flask(__name__)
 
-# Your Connect instance ID
-instance_id = ''
+# Single-page HTML/JS for React + Material-UI
+INDEX_HTML = """<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>AWS Connect Dashboard</title>
+    <!-- Material UI Fonts & Icons -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+    <!-- Babel for JSX transformation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Material UI Core (v5) -->
+    <script src="https://unpkg.com/@mui/material@5.0.0-rc.0/umd/material-ui.development.js"></script>
+    <script src="https://unpkg.com/@mui/material@5.0.0-rc.0/umd/material-ui.umd.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
 
-def get_user_info(user_id):
-    # Get user details
-    user = connect.describe_user(InstanceId=instance_id, UserId=user_id)
-    return user['User']
+    <script type="text/babel">
+      const {
+        Button, TextField, Container, Typography, Paper,
+        Table, TableBody, TableCell, TableContainer, TableHead, TableRow
+      } = MaterialUI;
 
-def get_routing_profile(profile_id):
-    # Get routing profile details
-    profile = connect.describe_routing_profile(InstanceId=instance_id, RoutingProfileId=profile_id)
-    return profile['RoutingProfile']
+      // -- Reusable Table Components ------------------------------------------
 
-def get_user_queue(routing_profile_id):
-    # Get associated queues for the routing profile
-    queues = connect.list_routing_profile_queues(InstanceId=instance_id, RoutingProfileId=routing_profile_id)
-    return queues['RoutingProfileQueueConfigList']
+      function UserTable({ data }) {
+        // data is an array of user summaries
+        return (
+          <TableContainer component={Paper} style={{ marginTop: '1rem' }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell><b>ID</b></TableCell>
+                  <TableCell><b>ARN</b></TableCell>
+                  <TableCell><b>Username</b></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {data.map((user) => (
+                  <TableRow key={user.Id}>
+                    <TableCell>{user.Id}</TableCell>
+                    <TableCell>{user.Arn}</TableCell>
+                    <TableCell>{user.Username}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        );
+      }
 
-def export_user_data():
-    # Read from input.csv in the same folder as the script
-    input_file = 'input.csv'
-    user_df = pd.read_csv(input_file)
-    
-    # Assuming the CSV has a column named 'Username'
-    user_list = user_df['Username'].tolist()
-    
-    data = []
-    invalid_users = []  # To store invalid users
+      function RoutingProfileTable({ data }) {
+        // data is an array of routing profile summaries
+        return (
+          <TableContainer component={Paper} style={{ marginTop: '1rem' }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell><b>Name</b></TableCell>
+                  <TableCell><b>ID</b></TableCell>
+                  <TableCell><b>ARN</b></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {data.map((profile) => (
+                  <TableRow key={profile.Id}>
+                    <TableCell>{profile.Name}</TableCell>
+                    <TableCell>{profile.Id}</TableCell>
+                    <TableCell>{profile.Arn}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        );
+      }
 
-    for user_id in user_list:
-        try:
-            # Retrieve user details
-            user_info = get_user_info(user_id)
-            
-            # Extract user details
-            username = user_info['Username']
-            routing_profile_id = user_info['RoutingProfileId']
-            security_profile_ids = user_info['SecurityProfileIds']
-            
-            # Get routing profile details
-            routing_profile = get_routing_profile(routing_profile_id)
-            routing_profile_name = routing_profile['Name']
-            
-            # Get queue associated with the routing profile
-            queues = get_user_queue(routing_profile_id)
-            queue_names = [queue['QueueReference']['Name'] for queue in queues]
-            
-            # Add to data
-            data.append({
-                'Username': username,
-                'RoutingProfile': routing_profile_name,
-                'Queues': ', '.join(queue_names),
-                'SecurityProfiles': ', '.join(security_profile_ids)  # Assuming this is the ID for simplicity
-            })
-        
-        except Exception as e:
-            # Log detailed error information
-            print(f"Error processing user {user_id}: {e}")
-            if hasattr(e, 'response'):
-                print(f"Detailed error: {e.response['Error']['Code']} - {e.response['Error']['Message']}")
-            invalid_users.append(user_id)
-            continue
-    
-    # Create Excel output
-    df = pd.DataFrame(data)
-    output_file = 'user_data_output.xlsx'
-    df.to_excel(output_file, index=False)
-    
-    # Log invalid users if any
-    if invalid_users:
-        print(f"Invalid users: {', '.join(invalid_users)}")
-    
-    print(f"Data exported successfully to {output_file}.")
+      function QueueTable({ data }) {
+        // data is an array of queue summaries
+        return (
+          <TableContainer component={Paper} style={{ marginTop: '1rem' }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell><b>Name</b></TableCell>
+                  <TableCell><b>ID</b></TableCell>
+                  <TableCell><b>ARN</b></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {data.map((queue) => (
+                  <TableRow key={queue.Id}>
+                    <TableCell>{queue.Name}</TableCell>
+                    <TableCell>{queue.Id}</TableCell>
+                    <TableCell>{queue.Arn}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        );
+      }
 
-# Run the function
+      // ... Add more specialized tables if you like, e.g. for security profiles, hours, etc.
+
+      function ResultsViewer({ data }) {
+        if (!data) return null;
+
+        // Check if the data contains known keys, then render a specialized table
+        if (data.UserSummaryList) {
+          return <UserTable data={data.UserSummaryList} />;
+        } else if (data.RoutingProfileSummaryList) {
+          return <RoutingProfileTable data={data.RoutingProfileSummaryList} />;
+        } else if (data.QueueSummaryList) {
+          return <QueueTable data={data.QueueSummaryList} />;
+        }
+        // Add more if statements for other specialized lists, e.g. data.HoursOfOperationSummaryList, etc.
+
+        // Fallback: show raw JSON
+        return (
+          <pre style={{ backgroundColor: '#f4f4f4', padding: '1rem', marginTop: '1rem' }}>
+            {JSON.stringify(data, null, 2)}
+          </pre>
+        );
+      }
+
+      // -- Main App ----------------------------------------------------------
+
+      function App() {
+        const [instanceId, setInstanceId] = React.useState('');
+        const [accessKeyId, setAccessKeyId] = React.useState('');
+        const [secretKey, setSecretKey] = React.useState('');
+        const [data, setData] = React.useState(null);
+        const [error, setError] = React.useState('');
+        const [loading, setLoading] = React.useState(false);
+
+        // Generic fetch function
+        const fetchData = async (endpoint) => {
+          setLoading(true);
+          setError('');
+          setData(null);
+          try {
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ instanceId, accessKeyId, secretKey })
+            });
+            const result = await response.json();
+            if (!response.ok) {
+              setError(result.error || 'Error fetching data');
+            } else {
+              setData(result);
+            }
+          } catch (err) {
+            setError(err.toString());
+          }
+          setLoading(false);
+        };
+
+        // Export data as text
+        const exportData = () => {
+          if (!data) return;
+          const fileData = JSON.stringify(data, null, 2);
+          const blob = new Blob([fileData], {type: 'text/plain'});
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = 'data.txt';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        };
+
+        return (
+          <Container maxWidth="md" style={{ marginTop: '2rem' }}>
+            <Paper style={{ padding: '2rem' }}>
+              <Typography variant="h4" gutterBottom>
+                AWS Connect Dashboard
+              </Typography>
+              <TextField
+                label="AWS Connect Instance ID"
+                fullWidth
+                margin="normal"
+                value={instanceId}
+                onChange={(e) => setInstanceId(e.target.value)}
+              />
+              <TextField
+                label="AWS Access Key ID"
+                fullWidth
+                margin="normal"
+                value={accessKeyId}
+                onChange={(e) => setAccessKeyId(e.target.value)}
+              />
+              <TextField
+                label="AWS Secret Key"
+                type="password"
+                fullWidth
+                margin="normal"
+                value={secretKey}
+                onChange={(e) => setSecretKey(e.target.value)}
+              />
+
+              <div style={{ marginTop: '1rem' }}>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={() => fetchData('/api/users')}
+                  style={{ marginRight: '0.5rem' }}
+                >
+                  Fetch Users
+                </Button>
+                <Button
+                  variant="contained"
+                  color="secondary"
+                  onClick={() => fetchData('/api/routing-profiles')}
+                  style={{ marginRight: '0.5rem' }}
+                >
+                  Fetch Routing Profiles
+                </Button>
+                <Button
+                  variant="contained"
+                  style={{ marginRight: '0.5rem' }}
+                  onClick={() => fetchData('/api/queues')}
+                >
+                  Fetch Queues
+                </Button>
+                <Button
+                  variant="contained"
+                  style={{ marginRight: '0.5rem' }}
+                  onClick={() => fetchData('/api/security-profiles')}
+                >
+                  Fetch Security Profiles
+                </Button>
+                <Button
+                  variant="contained"
+                  style={{ marginRight: '0.5rem' }}
+                  onClick={() => fetchData('/api/hours-of-operations')}
+                >
+                  Fetch Hours
+                </Button>
+                <Button
+                  variant="contained"
+                  style={{ marginRight: '0.5rem' }}
+                  onClick={() => fetchData('/api/contact-flows')}
+                >
+                  Fetch Contact Flows
+                </Button>
+              </div>
+
+              {loading && (
+                <Typography variant="body1" style={{ marginTop: '1rem' }}>
+                  Loading...
+                </Typography>
+              )}
+              {error && (
+                <Typography variant="body1" color="error" style={{ marginTop: '1rem' }}>
+                  {error}
+                </Typography>
+              )}
+
+              {/* Display results in a specialized table or raw JSON */}
+              <ResultsViewer data={data} />
+
+              {data && (
+                <Button variant="outlined" onClick={exportData} style={{ marginTop: '1rem' }}>
+                  Export Data
+                </Button>
+              )}
+            </Paper>
+          </Container>
+        );
+      }
+
+      ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+  </body>
+</html>
+"""
+
+@app.route("/")
+def index():
+    # Return the raw HTML so that Jinja doesn't parse the curly braces
+    return Response(INDEX_HTML, mimetype="text/html")
+
+# -- API Routes --------------------------------------------------------------
+
+@app.route("/api/users", methods=["POST"])
+def get_users():
+    data = request.get_json()
+    instance_id = data.get("instanceId")
+    access_key_id = data.get("accessKeyId")
+    secret_key = data.get("secretKey")
+
+    try:
+        connect_client = boto3.client(
+            "connect",
+            region_name="eu-west-2",
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_key,
+        )
+        response = connect_client.list_users(InstanceId=instance_id)
+        return jsonify(response)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/routing-profiles", methods=["POST"])
+def get_routing_profiles():
+    data = request.get_json()
+    instance_id = data.get("instanceId")
+    access_key_id = data.get("accessKeyId")
+    secret_key = data.get("secretKey")
+
+    try:
+        connect_client = boto3.client(
+            "connect",
+            region_name="eu-west-2",
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_key,
+        )
+        response = connect_client.list_routing_profiles(InstanceId=instance_id)
+        return jsonify(response)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/queues", methods=["POST"])
+def get_queues():
+    data = request.get_json()
+    instance_id = data.get("instanceId")
+    access_key_id = data.get("accessKeyId")
+    secret_key = data.get("secretKey")
+
+    try:
+        connect_client = boto3.client(
+            "connect",
+            region_name="eu-west-2",
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_key,
+        )
+        response = connect_client.list_queues(InstanceId=instance_id)
+        return jsonify(response)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/security-profiles", methods=["POST"])
+def get_security_profiles():
+    data = request.get_json()
+    instance_id = data.get("instanceId")
+    access_key_id = data.get("accessKeyId")
+    secret_key = data.get("secretKey")
+
+    try:
+        connect_client = boto3.client(
+            "connect",
+            region_name="eu-west-2",
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_key,
+        )
+        response = connect_client.list_security_profiles(InstanceId=instance_id)
+        return jsonify(response)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/hours-of-operations", methods=["POST"])
+def get_hours_of_operations():
+    data = request.get_json()
+    instance_id = data.get("instanceId")
+    access_key_id = data.get("accessKeyId")
+    secret_key = data.get("secretKey")
+
+    try:
+        connect_client = boto3.client(
+            "connect",
+            region_name="eu-west-2",
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_key,
+        )
+        response = connect_client.list_hours_of_operations(InstanceId=instance_id)
+        return jsonify(response)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/contact-flows", methods=["POST"])
+def get_contact_flows():
+    data = request.get_json()
+    instance_id = data.get("instanceId")
+    access_key_id = data.get("accessKeyId")
+    secret_key = data.get("secretKey")
+
+    try:
+        connect_client = boto3.client(
+            "connect",
+            region_name="eu-west-2",
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_key,
+        )
+        response = connect_client.list_contact_flows(InstanceId=instance_id)
+        return jsonify(response)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
-    export_user_data()
+    # Launch the Flask development server
+    app.run(debug=True)
