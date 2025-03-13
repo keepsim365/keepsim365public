@@ -344,15 +344,13 @@ INDEX_HTML = """<!DOCTYPE html>
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                   instanceId, accessKeyId: credentials.accessKeyId,
-                  secretKey: credentials.secretKey, userId: user.Id
+                  secretKey: credentials.secretKey, sessionToken: credentials.sessionToken,
+                  userId: user.Id
                 })
               });
               const result = await response.json();
-              if (!response.ok) {
-                setError(result.error || 'Error fetching user details');
-              } else {
-                setUserData(result);
-              }
+              if (!response.ok) { setError(result.error || 'Error fetching user details'); }
+              else { setUserData(result); }
             } catch (err) { setError(err.toString()); }
             finally { setLoading(false); }
           };
@@ -371,27 +369,15 @@ INDEX_HTML = """<!DOCTYPE html>
               <Grid container spacing={2}>
                 <Grid item xs={12}>
                   <Typography variant="subtitle1">Identity Info</Typography>
-                  <Typography variant="body2">
-                    First Name: {userData?.User?.IdentityInfo?.FirstName || 'N/A'}
-                  </Typography>
-                  <Typography variant="body2">
-                    Last Name: {userData?.User?.IdentityInfo?.LastName || 'N/A'}
-                  </Typography>
-                  <Typography variant="body2">
-                    Email: {userData?.User?.IdentityInfo?.Email || 'N/A'}
-                  </Typography>
+                  <Typography variant="body2">First Name: {userData?.User?.IdentityInfo?.FirstName || 'N/A'}</Typography>
+                  <Typography variant="body2">Last Name: {userData?.User?.IdentityInfo?.LastName || 'N/A'}</Typography>
+                  <Typography variant="body2">Email: {userData?.User?.IdentityInfo?.Email || 'N/A'}</Typography>
                 </Grid>
                 <Grid item xs={12}>
                   <Typography variant="subtitle1">Phone Config</Typography>
-                  <Typography variant="body2">
-                    After Contact Work Time: {userData?.User?.PhoneConfig?.AfterContactWorkTimeLimit || 'Default'}
-                  </Typography>
-                  <Typography variant="body2">
-                    Auto Accept: {userData?.User?.PhoneConfig?.AutoAccept ? 'Yes' : 'No'}
-                  </Typography>
-                  <Typography variant="body2">
-                    Desk Phone Number: {userData?.User?.PhoneConfig?.DeskPhoneNumber || 'None'}
-                  </Typography>
+                  <Typography variant="body2">After Contact Work Time: {userData?.User?.PhoneConfig?.AfterContactWorkTimeLimit || 'Default'}</Typography>
+                  <Typography variant="body2">Auto Accept: {userData?.User?.PhoneConfig?.AutoAccept ? 'Yes' : 'No'}</Typography>
+                  <Typography variant="body2">Desk Phone Number: {userData?.User?.PhoneConfig?.DeskPhoneNumber || 'None'}</Typography>
                 </Grid>
                 <Grid item xs={12}>
                   <Typography variant="subtitle1">Security Profile IDs</Typography>
@@ -422,15 +408,13 @@ INDEX_HTML = """<!DOCTYPE html>
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                   instanceId, accessKeyId: credentials.accessKeyId,
-                  secretKey: credentials.secretKey, routingProfileId: profile.Id
+                  secretKey: credentials.secretKey, sessionToken: credentials.sessionToken,
+                  routingProfileId: profile.Id
                 })
               });
               const result = await response.json();
-              if (!response.ok) {
-                setError(result.error || 'Error fetching routing profile details');
-              } else {
-                setProfileData(result);
-              }
+              if (!response.ok) { setError(result.error || 'Error fetching routing profile details'); }
+              else { setProfileData(result); }
             } catch (err) { setError(err.toString()); }
             finally { setLoading(false); }
           };
@@ -532,15 +516,13 @@ INDEX_HTML = """<!DOCTYPE html>
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                   instanceId, accessKeyId: credentials.accessKeyId,
-                  secretKey: credentials.secretKey, queueId: queue.Id
+                  secretKey: credentials.secretKey, sessionToken: credentials.sessionToken,
+                  queueId: queue.Id
                 })
               });
               const result = await response.json();
-              if (!response.ok) {
-                setError(result.error || 'Error fetching queue details');
-              } else {
-                setQueueData(result);
-              }
+              if (!response.ok) { setError(result.error || 'Error fetching queue details'); }
+              else { setQueueData(result); }
             } catch (err) { setError(err.toString()); }
             finally { setLoading(false); }
           };
@@ -617,7 +599,7 @@ INDEX_HTML = """<!DOCTYPE html>
         if (!data) return null;
         if (selectedItem) {
           switch(resourceType) {
-            case 'users': return <UserDetail user={selectedItem} instanceId={instanceId} credentials={credentials} onRefresh={onRefresh} />;
+            case 'users': return <UserDetail user={selectedResource} instanceId={instanceId} credentials={credentials} onRefresh={onRefresh} />;
             case 'routing-profiles': return <RoutingProfileDetail profile={selectedItem} instanceId={instanceId} credentials={credentials} onRefresh={onRefresh} />;
             case 'queues': return <QueueDetail queue={selectedItem} instanceId={instanceId} credentials={credentials} onRefresh={onRefresh} />;
             default: return <GenericDetail item={selectedItem} type={resourceType} />;
@@ -648,6 +630,7 @@ INDEX_HTML = """<!DOCTYPE html>
         const [instanceId, setInstanceId] = React.useState('');
         const [accessKeyId, setAccessKeyId] = React.useState('');
         const [secretKey, setSecretKey] = React.useState('');
+        const [sessionToken, setSessionToken] = React.useState('');
         const [currentView, setCurrentView] = React.useState('dashboard');
         const [resourceData, setResourceData] = React.useState(null);
         const [selectedResource, setSelectedResource] = React.useState(null);
@@ -655,7 +638,7 @@ INDEX_HTML = """<!DOCTYPE html>
         const [error, setError] = React.useState('');
         const [snackbarOpen, setSnackbarOpen] = React.useState(false);
         const [snackbarMessage, setSnackbarMessage] = React.useState('');
-        const credentials = { accessKeyId, secretKey };
+        const credentials = { accessKeyId, secretKey, sessionToken };
 
         const fetchResource = async (resourceType) => {
           setLoading(true);
@@ -666,7 +649,7 @@ INDEX_HTML = """<!DOCTYPE html>
             const response = await fetch(`/api/${resourceType}`, {
               method: 'POST',
               headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({ instanceId, accessKeyId, secretKey })
+              body: JSON.stringify({ instanceId, accessKeyId, secretKey, sessionToken })
             });
             const result = await response.json();
             if (!response.ok) {
@@ -736,6 +719,7 @@ INDEX_HTML = """<!DOCTYPE html>
                         <TextField label="AWS Connect Instance ID" fullWidth margin="normal" value={instanceId} onChange={(e) => setInstanceId(e.target.value)} />
                         <TextField label="AWS Access Key ID" fullWidth margin="normal" value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} />
                         <TextField label="AWS Secret Key" type="password" fullWidth margin="normal" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} />
+                        <TextField label="AWS Session Token" fullWidth margin="normal" value={sessionToken} onChange={(e) => setSessionToken(e.target.value)} />
                       </Box>
                       {loading && <CircularProgress />}
                       {error && <Alert severity="error" style={{ marginTop: '1rem' }}>{error}</Alert>}
@@ -763,175 +747,134 @@ INDEX_HTML = """<!DOCTYPE html>
 </html>
 """
 
-# ---------------- Flask API Endpoints ----------------
+# -------------------- Flask API Endpoints --------------------
 
 @app.route("/")
 def index():
     return Response(INDEX_HTML, mimetype="text/html")
 
-# List Users
+def create_connect_client(data):
+    # Extract common credentials including session token
+    instance_id = data.get("instanceId")
+    access_key_id = data.get("accessKeyId")
+    secret_key = data.get("secretKey")
+    session_token = data.get("sessionToken")
+    return boto3.client(
+        "connect",
+        region_name="eu-west-2",
+        aws_access_key_id=access_key_id,
+        aws_secret_access_key=secret_key,
+        aws_session_token=session_token
+    )
+
 @app.route("/api/users", methods=["POST"])
 def get_users():
     data = request.get_json()
-    instance_id = data.get("instanceId")
-    access_key_id = data.get("accessKeyId")
-    secret_key = data.get("secretKey")
     try:
-        client = boto3.client("connect", region_name="eu-west-2",
-                                aws_access_key_id=access_key_id,
-                                aws_secret_access_key=secret_key)
-        response = client.list_users(InstanceId=instance_id)
+        client = create_connect_client(data)
+        response = client.list_users(InstanceId=data.get("instanceId"))
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# List Routing Profiles
 @app.route("/api/routing-profiles", methods=["POST"])
 def get_routing_profiles():
     data = request.get_json()
-    instance_id = data.get("instanceId")
-    access_key_id = data.get("accessKeyId")
-    secret_key = data.get("secretKey")
     try:
-        client = boto3.client("connect", region_name="eu-west-2",
-                                aws_access_key_id=access_key_id,
-                                aws_secret_access_key=secret_key)
-        response = client.list_routing_profiles(InstanceId=instance_id)
+        client = create_connect_client(data)
+        response = client.list_routing_profiles(InstanceId=data.get("instanceId"))
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# List Queues
 @app.route("/api/queues", methods=["POST"])
 def get_queues():
     data = request.get_json()
-    instance_id = data.get("instanceId")
-    access_key_id = data.get("accessKeyId")
-    secret_key = data.get("secretKey")
     try:
-        client = boto3.client("connect", region_name="eu-west-2",
-                                aws_access_key_id=access_key_id,
-                                aws_secret_access_key=secret_key)
-        response = client.list_queues(InstanceId=instance_id)
+        client = create_connect_client(data)
+        response = client.list_queues(InstanceId=data.get("instanceId"))
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# List Security Profiles
 @app.route("/api/security-profiles", methods=["POST"])
 def get_security_profiles():
     data = request.get_json()
-    instance_id = data.get("instanceId")
-    access_key_id = data.get("accessKeyId")
-    secret_key = data.get("secretKey")
     try:
-        client = boto3.client("connect", region_name="eu-west-2",
-                                aws_access_key_id=access_key_id,
-                                aws_secret_access_key=secret_key)
-        response = client.list_security_profiles(InstanceId=instance_id)
+        client = create_connect_client(data)
+        response = client.list_security_profiles(InstanceId=data.get("instanceId"))
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# List Hours of Operations
 @app.route("/api/hours-of-operations", methods=["POST"])
 def get_hours_of_operations():
     data = request.get_json()
-    instance_id = data.get("instanceId")
-    access_key_id = data.get("accessKeyId")
-    secret_key = data.get("secretKey")
     try:
-        client = boto3.client("connect", region_name="eu-west-2",
-                                aws_access_key_id=access_key_id,
-                                aws_secret_access_key=secret_key)
-        response = client.list_hours_of_operations(InstanceId=instance_id)
+        client = create_connect_client(data)
+        response = client.list_hours_of_operations(InstanceId=data.get("instanceId"))
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# List Contact Flows
 @app.route("/api/contact-flows", methods=["POST"])
 def get_contact_flows():
     data = request.get_json()
-    instance_id = data.get("instanceId")
-    access_key_id = data.get("accessKeyId")
-    secret_key = data.get("secretKey")
     try:
-        client = boto3.client("connect", region_name="eu-west-2",
-                                aws_access_key_id=access_key_id,
-                                aws_secret_access_key=secret_key)
-        response = client.list_contact_flows(InstanceId=instance_id)
+        client = create_connect_client(data)
+        response = client.list_contact_flows(InstanceId=data.get("instanceId"))
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Get User Detail
 @app.route("/api/user-detail", methods=["POST"])
 def user_detail():
     data = request.get_json()
-    instance_id = data.get("instanceId")
-    access_key_id = data.get("accessKeyId")
-    secret_key = data.get("secretKey")
-    user_id = data.get("userId")
     try:
-        client = boto3.client("connect", region_name="eu-west-2",
-                                aws_access_key_id=access_key_id,
-                                aws_secret_access_key=secret_key)
-        response = client.describe_user(InstanceId=instance_id, UserId=user_id)
+        client = create_connect_client(data)
+        response = client.describe_user(
+            InstanceId=data.get("instanceId"),
+            UserId=data.get("userId")
+        )
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Get Routing Profile Detail
 @app.route("/api/routing-profile-detail", methods=["POST"])
 def routing_profile_detail():
     data = request.get_json()
-    instance_id = data.get("instanceId")
-    access_key_id = data.get("accessKeyId")
-    secret_key = data.get("secretKey")
-    routing_profile_id = data.get("routingProfileId")
     try:
-        client = boto3.client("connect", region_name="eu-west-2",
-                                aws_access_key_id=access_key_id,
-                                aws_secret_access_key=secret_key)
-        response = client.describe_routing_profile(InstanceId=instance_id, RoutingProfileId=routing_profile_id)
+        client = create_connect_client(data)
+        response = client.describe_routing_profile(
+            InstanceId=data.get("instanceId"),
+            RoutingProfileId=data.get("routingProfileId")
+        )
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Get Queue Detail
 @app.route("/api/queue-detail", methods=["POST"])
 def queue_detail():
     data = request.get_json()
-    instance_id = data.get("instanceId")
-    access_key_id = data.get("accessKeyId")
-    secret_key = data.get("secretKey")
-    queue_id = data.get("queueId")
     try:
-        client = boto3.client("connect", region_name="eu-west-2",
-                                aws_access_key_id=access_key_id,
-                                aws_secret_access_key=secret_key)
-        response = client.describe_queue(InstanceId=instance_id, QueueId=queue_id)
+        client = create_connect_client(data)
+        response = client.describe_queue(
+            InstanceId=data.get("instanceId"),
+            QueueId=data.get("queueId")
+        )
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 # ---------------- Additional Endpoints ----------------
 
-# Real-time Metrics Endpoint
 @app.route("/api/metrics/realtime", methods=["POST"])
 def metrics_realtime():
     data = request.get_json()
-    instance_id = data.get("instanceId")
-    access_key_id = data.get("accessKeyId")
-    secret_key = data.get("secretKey")
     try:
-        client = boto3.client("connect", region_name="eu-west-2",
-                                aws_access_key_id=access_key_id,
-                                aws_secret_access_key=secret_key)
-        # Example: Get current metrics for all queues
+        client = create_connect_client(data)
         response = client.get_current_metric_data(
-            InstanceId=instance_id,
+            InstanceId=data.get("instanceId"),
             Filters={"Queues": []},
             CurrentMetrics=[
                 {"Name": "AGENTS_AVAILABLE", "Unit": "COUNT"},
@@ -943,20 +886,13 @@ def metrics_realtime():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Historical Metrics Endpoint
 @app.route("/api/metrics/historical", methods=["POST"])
 def metrics_historical():
     data = request.get_json()
-    instance_id = data.get("instanceId")
-    access_key_id = data.get("accessKeyId")
-    secret_key = data.get("secretKey")
-    # For demonstration, use fixed dates; in production, pass dates as parameters.
     try:
-        client = boto3.client("connect", region_name="eu-west-2",
-                                aws_access_key_id=access_key_id,
-                                aws_secret_access_key=secret_key)
+        client = create_connect_client(data)
         response = client.get_metric_data(
-            InstanceId=instance_id,
+            InstanceId=data.get("instanceId"),
             StartTime="2021-01-01T00:00:00Z",
             EndTime="2021-01-01T01:00:00Z",
             Filters={"Queues": []},
@@ -968,52 +904,35 @@ def metrics_historical():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Contact History Endpoint (stub using SearchContacts)
 @app.route("/api/contact-history", methods=["POST"])
 def contact_history():
     data = request.get_json()
-    instance_id = data.get("instanceId")
-    access_key_id = data.get("accessKeyId")
-    secret_key = data.get("secretKey")
     try:
-        client = boto3.client("connect", region_name="eu-west-2",
-                                aws_access_key_id=access_key_id,
-                                aws_secret_access_key=secret_key)
-        # Note: In production, provide SearchCriteria; here we use an empty filter as a demo.
+        client = create_connect_client(data)
         response = client.search_contacts(
-            InstanceId=instance_id,
+            InstanceId=data.get("instanceId"),
             Filters={}
         )
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# List Phone Numbers Endpoint
 @app.route("/api/phone-numbers", methods=["POST"])
 def phone_numbers():
     data = request.get_json()
-    instance_id = data.get("instanceId")
-    access_key_id = data.get("accessKeyId")
-    secret_key = data.get("secretKey")
     try:
-        client = boto3.client("connect", region_name="eu-west-2",
-                                aws_access_key_id=access_key_id,
-                                aws_secret_access_key=secret_key)
-        response = client.list_phone_numbers(InstanceId=instance_id)
+        client = create_connect_client(data)
+        response = client.list_phone_numbers(InstanceId=data.get("instanceId"))
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Voice ID Endpoint (Stub)
 @app.route("/api/voice-id", methods=["POST"])
 def voice_id():
-    # In production, use boto3.client('voiceid') and implement actual calls.
     return jsonify({"message": "Voice ID integration not implemented in this demo."})
 
-# Contact Trace Endpoint (Stub)
 @app.route("/api/contact-trace", methods=["POST"])
 def contact_trace():
-    # In production, implement contact trace retrieval (e.g., from S3 or a database).
     return jsonify({"message": "Contact trace functionality not implemented in this demo."})
 
 if __name__ == "__main__":
