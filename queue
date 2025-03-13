@@ -1,6 +1,5 @@
 from flask import Flask, Response, request, jsonify
 import boto3
-import os
 import json
 
 app = Flask(__name__)
@@ -20,38 +19,184 @@ INDEX_HTML = """<!DOCTYPE html>
     <!-- Babel for JSX transformation -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <!-- Material UI Core (v5) -->
-    <script src="https://unpkg.com/@mui/material@5.0.0-rc.0/umd/material-ui.development.js"></script>
-    <script src="https://unpkg.com/@mui/material@5.0.0-rc.0/umd/material-ui.umd.js"></script>
+    <script src="https://unpkg.com/@mui/material@5.0.0/umd/material-ui.development.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/emotion/11.0.0/emotion.umd.min.js"></script>
+    <!-- Custom Styles -->
+    <style>
+      body {
+        margin: 0;
+        font-family: 'Roboto', sans-serif;
+        background-color: #f5f5f5;
+      }
+      .aws-orange {
+        color: #FF9900;
+      }
+      .clickable-row {
+        cursor: pointer;
+      }
+      .clickable-row:hover {
+        background-color: rgba(0, 0, 0, 0.04);
+      }
+      .detail-card {
+        margin-top: 16px;
+        padding: 16px;
+      }
+      .breadcrumbs {
+        margin-bottom: 16px;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
-
     <script type="text/babel">
       const {
-        Button, TextField, Container, Typography, Paper,
-        Table, TableBody, TableCell, TableContainer, TableHead, TableRow
+        Button, TextField, Container, Typography, Paper, Box, Grid,
+        List, ListItem, ListItemIcon, ListItemText, Breadcrumbs, Link,
+        Card, CardContent, CardHeader, CircularProgress, AppBar, Toolbar,
+        IconButton, Snackbar, Alert, Chip, Table, TableBody, TableCell,
+        TableContainer, TableHead, TableRow
       } = MaterialUI;
 
-      // -- Reusable Table Components ------------------------------------------
+      // -- Icon Component --------------------------------------------------
+      const Icon = ({ icon }) => (
+        <span className="material-icons" style={{ verticalAlign: 'middle' }}>{icon}</span>
+      );
 
-      function UserTable({ data }) {
-        // data is an array of user summaries
+      // -- Navigation Component ---------------------------------------------
+      function Navigation({ onNavigate, currentView }) {
+        const menuItems = [
+          { name: "Dashboard", icon: "dashboard", path: "dashboard" },
+          { name: "Users", icon: "people", path: "users" },
+          { name: "Routing Profiles", icon: "call_split", path: "routing-profiles" },
+          { name: "Queues", icon: "queue", path: "queues" },
+          { name: "Security Profiles", icon: "security", path: "security-profiles" },
+          { name: "Hours of Operation", icon: "schedule", path: "hours-of-operations" },
+          { name: "Contact Flows", icon: "call", path: "contact-flows" },
+          { name: "Realtime Metrics", icon: "trending_up", path: "metrics/realtime" },
+          { name: "Historical Metrics", icon: "insert_chart", path: "metrics/historical" },
+          { name: "Contact History", icon: "history", path: "contact-history" },
+          { name: "Phone Numbers", icon: "phone", path: "phone-numbers" },
+          { name: "Voice ID", icon: "record_voice_over", path: "voice-id" },
+          { name: "Contact Trace", icon: "timeline", path: "contact-trace" },
+        ];
+        return (
+          <List>
+            {menuItems.map((item) => (
+              <ListItem 
+                button 
+                key={item.name} 
+                onClick={() => onNavigate(item.path)}
+                selected={currentView === item.path}
+              >
+                <ListItemIcon><Icon icon={item.icon} /></ListItemIcon>
+                <ListItemText primary={item.name} />
+              </ListItem>
+            ))}
+          </List>
+        );
+      }
+
+      // -- Breadcrumb Navigation --------------------------------------------
+      function BreadcrumbNav({ path, onNavigate }) {
+        if (!path || path === 'dashboard') return null;
+        const parts = path.split('/');
+        return (
+          <Breadcrumbs aria-label="breadcrumb" className="breadcrumbs">
+            <Link 
+              color="inherit" 
+              href="#" 
+              onClick={(e) => { e.preventDefault(); onNavigate('dashboard'); }}
+            >
+              Dashboard
+            </Link>
+            {parts.map((part, index) => {
+              const isLast = index === parts.length - 1;
+              const displayName = part.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+              const currentPath = parts.slice(0, index + 1).join('/');
+              return isLast ? (
+                <Typography color="textPrimary" key={part}>{displayName}</Typography>
+              ) : (
+                <Link
+                  color="inherit"
+                  href="#"
+                  key={part}
+                  onClick={(e) => { e.preventDefault(); onNavigate(currentPath); }}
+                >
+                  {displayName}
+                </Link>
+              );
+            })}
+          </Breadcrumbs>
+        );
+      }
+
+      // -- Dashboard Component ----------------------------------------------
+      function Dashboard({ onNavigate }) {
+        const cards = [
+          { title: "Users", icon: "people", description: "Manage and view users", path: "users" },
+          { title: "Routing Profiles", icon: "call_split", description: "Configure routing profiles", path: "routing-profiles" },
+          { title: "Queues", icon: "queue", description: "Manage contact queues", path: "queues" },
+          { title: "Security Profiles", icon: "security", description: "Configure security profiles", path: "security-profiles" },
+          { title: "Hours of Operation", icon: "schedule", description: "Set operating hours", path: "hours-of-operations" },
+          { title: "Contact Flows", icon: "call", description: "Configure call flows", path: "contact-flows" },
+          { title: "Realtime Metrics", icon: "trending_up", description: "View live metrics", path: "metrics/realtime" },
+          { title: "Historical Metrics", icon: "insert_chart", description: "View performance over time", path: "metrics/historical" },
+          { title: "Contact History", icon: "history", description: "Search past contacts", path: "contact-history" },
+          { title: "Phone Numbers", icon: "phone", description: "Manage phone numbers", path: "phone-numbers" },
+          { title: "Voice ID", icon: "record_voice_over", description: "Voice authentication details", path: "voice-id" },
+          { title: "Contact Trace", icon: "timeline", description: "View contact journey", path: "contact-trace" },
+        ];
+        return (
+          <Box>
+            <Typography variant="h4" gutterBottom>Dashboard</Typography>
+            <Typography variant="body1" paragraph>
+              Welcome to the AWS Connect Dashboard. Use the cards below to navigate to different sections.
+            </Typography>
+            <Grid container spacing={3}>
+              {cards.map((card) => (
+                <Grid item xs={12} sm={6} md={4} key={card.title}>
+                  <Card 
+                    style={{ height: '100%', cursor: 'pointer' }}
+                    onClick={() => onNavigate(card.path)}
+                    variant="outlined"
+                  >
+                    <CardContent>
+                      <Box display="flex" alignItems="center" mb={2}>
+                        <Box mr={2} display="flex" alignItems="center" justifyContent="center"
+                          style={{ backgroundColor: '#f0f0f0', borderRadius: '50%', width: 48, height: 48 }}
+                        >
+                          <Icon icon={card.icon} />
+                        </Box>
+                        <Typography variant="h6">{card.title}</Typography>
+                      </Box>
+                      <Typography variant="body2" color="textSecondary">{card.description}</Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+        );
+      }
+
+      // -- Table Components for Listing Entities ---------------------------
+      function UserTable({ data, onItemClick }) {
         return (
           <TableContainer component={Paper} style={{ marginTop: '1rem' }}>
             <Table size="small">
               <TableHead>
                 <TableRow>
+                  <TableCell><b>Username</b></TableCell>
                   <TableCell><b>ID</b></TableCell>
                   <TableCell><b>ARN</b></TableCell>
-                  <TableCell><b>Username</b></TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {data.map((user) => (
-                  <TableRow key={user.Id}>
-                    <TableCell>{user.Id}</TableCell>
-                    <TableCell>{user.Arn}</TableCell>
+                  <TableRow key={user.Id} className="clickable-row" onClick={() => onItemClick('users', user.Id, user)}>
                     <TableCell>{user.Username}</TableCell>
+                    <TableCell>{user.Id.slice(0, 8)}...</TableCell>
+                    <TableCell>{user.Arn.slice(0, 30)}...</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -60,8 +205,57 @@ INDEX_HTML = """<!DOCTYPE html>
         );
       }
 
-      function RoutingProfileTable({ data }) {
-        // data is an array of routing profile summaries
+      function RoutingProfileTable({ data, onItemClick }) {
+        return (
+          <TableContainer component={Paper} style={{ marginTop: '1rem' }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell><b>Name</b></TableCell>
+                  <TableCell><b>ID</b></TableCell>
+                  <TableCell><b>Default Outbound Queue</b></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {data.map((profile) => (
+                  <TableRow key={profile.Id} className="clickable-row" onClick={() => onItemClick('routing-profiles', profile.Id, profile)}>
+                    <TableCell>{profile.Name}</TableCell>
+                    <TableCell>{profile.Id.slice(0, 8)}...</TableCell>
+                    <TableCell>{profile.DefaultOutboundQueueId ? profile.DefaultOutboundQueueId.slice(0, 8) + '...' : 'None'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        );
+      }
+
+      function QueueTable({ data, onItemClick }) {
+        return (
+          <TableContainer component={Paper} style={{ marginTop: '1rem' }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell><b>Name</b></TableCell>
+                  <TableCell><b>ID</b></TableCell>
+                  <TableCell><b>Queue Type</b></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {data.map((queue) => (
+                  <TableRow key={queue.Id} className="clickable-row" onClick={() => onItemClick('queues', queue.Id, queue)}>
+                    <TableCell>{queue.Name}</TableCell>
+                    <TableCell>{queue.Id.slice(0, 8)}...</TableCell>
+                    <TableCell>{queue.QueueType || 'Standard'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        );
+      }
+
+      function SecurityProfileTable({ data, onItemClick }) {
         return (
           <TableContainer component={Paper} style={{ marginTop: '1rem' }}>
             <Table size="small">
@@ -74,10 +268,10 @@ INDEX_HTML = """<!DOCTYPE html>
               </TableHead>
               <TableBody>
                 {data.map((profile) => (
-                  <TableRow key={profile.Id}>
+                  <TableRow key={profile.Id} className="clickable-row" onClick={() => onItemClick('security-profiles', profile.Id, profile)}>
                     <TableCell>{profile.Name}</TableCell>
-                    <TableCell>{profile.Id}</TableCell>
-                    <TableCell>{profile.Arn}</TableCell>
+                    <TableCell>{profile.Id.slice(0, 8)}...</TableCell>
+                    <TableCell>{profile.Arn.slice(0, 30)}...</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -86,8 +280,7 @@ INDEX_HTML = """<!DOCTYPE html>
         );
       }
 
-      function QueueTable({ data }) {
-        // data is an array of queue summaries
+      function HoursOfOperationTable({ data, onItemClick }) {
         return (
           <TableContainer component={Paper} style={{ marginTop: '1rem' }}>
             <Table size="small">
@@ -99,11 +292,11 @@ INDEX_HTML = """<!DOCTYPE html>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {data.map((queue) => (
-                  <TableRow key={queue.Id}>
-                    <TableCell>{queue.Name}</TableCell>
-                    <TableCell>{queue.Id}</TableCell>
-                    <TableCell>{queue.Arn}</TableCell>
+                {data.map((hours) => (
+                  <TableRow key={hours.Id} className="clickable-row" onClick={() => onItemClick('hours-of-operations', hours.Id, hours)}>
+                    <TableCell>{hours.Name}</TableCell>
+                    <TableCell>{hours.Id.slice(0, 8)}...</TableCell>
+                    <TableCell>{hours.Arn.slice(0, 30)}...</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -112,46 +305,365 @@ INDEX_HTML = """<!DOCTYPE html>
         );
       }
 
-      // ... Add more specialized tables if you like, e.g. for security profiles, hours, etc.
-
-      function ResultsViewer({ data }) {
-        if (!data) return null;
-
-        // Check if the data contains known keys, then render a specialized table
-        if (data.UserSummaryList) {
-          return <UserTable data={data.UserSummaryList} />;
-        } else if (data.RoutingProfileSummaryList) {
-          return <RoutingProfileTable data={data.RoutingProfileSummaryList} />;
-        } else if (data.QueueSummaryList) {
-          return <QueueTable data={data.QueueSummaryList} />;
-        }
-        // Add more if statements for other specialized lists, e.g. data.HoursOfOperationSummaryList, etc.
-
-        // Fallback: show raw JSON
+      function ContactFlowTable({ data, onItemClick }) {
         return (
-          <pre style={{ backgroundColor: '#f4f4f4', padding: '1rem', marginTop: '1rem' }}>
+          <TableContainer component={Paper} style={{ marginTop: '1rem' }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell><b>Name</b></TableCell>
+                  <TableCell><b>ID</b></TableCell>
+                  <TableCell><b>Type</b></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {data.map((flow) => (
+                  <TableRow key={flow.Id} className="clickable-row" onClick={() => onItemClick('contact-flows', flow.Id, flow)}>
+                    <TableCell>{flow.Name}</TableCell>
+                    <TableCell>{flow.Id.slice(0, 8)}...</TableCell>
+                    <TableCell>{flow.Type}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        );
+      }
+
+      // -- Detail View Components -------------------------------------------
+      function UserDetail({ user, instanceId, credentials, onRefresh }) {
+        const [userData, setUserData] = React.useState(null);
+        const [loading, setLoading] = React.useState(true);
+        const [error, setError] = React.useState(null);
+        
+        React.useEffect(() => {
+          const fetchUserDetails = async () => {
+            try {
+              const response = await fetch('/api/user-detail', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                  instanceId, accessKeyId: credentials.accessKeyId,
+                  secretKey: credentials.secretKey, userId: user.Id
+                })
+              });
+              const result = await response.json();
+              if (!response.ok) {
+                setError(result.error || 'Error fetching user details');
+              } else {
+                setUserData(result);
+              }
+            } catch (err) { setError(err.toString()); }
+            finally { setLoading(false); }
+          };
+          fetchUserDetails();
+        }, [user, instanceId, credentials]);
+        
+        if (loading) return <CircularProgress />;
+        if (error) return <Alert severity="error" style={{ marginTop: '1rem' }}>{error}</Alert>;
+        return (
+          <Card className="detail-card">
+            <CardHeader
+              title={`User: ${userData?.User?.Username || user.Username}`}
+              subheader={`ID: ${userData?.User?.Id || user.Id}`}
+            />
+            <CardContent>
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <Typography variant="subtitle1">Identity Info</Typography>
+                  <Typography variant="body2">
+                    First Name: {userData?.User?.IdentityInfo?.FirstName || 'N/A'}
+                  </Typography>
+                  <Typography variant="body2">
+                    Last Name: {userData?.User?.IdentityInfo?.LastName || 'N/A'}
+                  </Typography>
+                  <Typography variant="body2">
+                    Email: {userData?.User?.IdentityInfo?.Email || 'N/A'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12}>
+                  <Typography variant="subtitle1">Phone Config</Typography>
+                  <Typography variant="body2">
+                    After Contact Work Time: {userData?.User?.PhoneConfig?.AfterContactWorkTimeLimit || 'Default'}
+                  </Typography>
+                  <Typography variant="body2">
+                    Auto Accept: {userData?.User?.PhoneConfig?.AutoAccept ? 'Yes' : 'No'}
+                  </Typography>
+                  <Typography variant="body2">
+                    Desk Phone Number: {userData?.User?.PhoneConfig?.DeskPhoneNumber || 'None'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12}>
+                  <Typography variant="subtitle1">Security Profile IDs</Typography>
+                  {userData?.User?.SecurityProfileIds?.map(id => (
+                    <Chip key={id} label={id.slice(0, 8) + '...'} size="small" style={{ margin: '2px' }} />
+                  )) || 'None'}
+                </Grid>
+                <Grid item xs={12}>
+                  <Typography variant="subtitle1">Routing Profile</Typography>
+                  <Chip label={userData?.User?.RoutingProfileId ? userData.User.RoutingProfileId.slice(0, 8) + '...' : 'None'} size="small" />
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        );
+      }
+
+      function RoutingProfileDetail({ profile, instanceId, credentials, onRefresh }) {
+        const [profileData, setProfileData] = React.useState(null);
+        const [loading, setLoading] = React.useState(true);
+        const [error, setError] = React.useState(null);
+        
+        React.useEffect(() => {
+          const fetchRoutingProfileDetails = async () => {
+            try {
+              const response = await fetch('/api/routing-profile-detail', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                  instanceId, accessKeyId: credentials.accessKeyId,
+                  secretKey: credentials.secretKey, routingProfileId: profile.Id
+                })
+              });
+              const result = await response.json();
+              if (!response.ok) {
+                setError(result.error || 'Error fetching routing profile details');
+              } else {
+                setProfileData(result);
+              }
+            } catch (err) { setError(err.toString()); }
+            finally { setLoading(false); }
+          };
+          fetchRoutingProfileDetails();
+        }, [profile, instanceId, credentials]);
+        
+        if (loading) return <CircularProgress />;
+        if (error) return <Alert severity="error" style={{ marginTop: '1rem' }}>{error}</Alert>;
+        return (
+          <Card className="detail-card">
+            <CardHeader
+              title={`Routing Profile: ${profileData?.RoutingProfile?.Name || profile.Name}`}
+              subheader={`ID: ${profileData?.RoutingProfile?.RoutingProfileId || profile.Id}`}
+            />
+            <CardContent>
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <Typography variant="subtitle1">Description</Typography>
+                  <Typography variant="body2">
+                    {profileData?.RoutingProfile?.Description || 'No description available'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12}>
+                  <Typography variant="subtitle1">Default Outbound Queue</Typography>
+                  <Typography variant="body2">
+                    {profileData?.RoutingProfile?.DefaultOutboundQueueId || 'None'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12}>
+                  <Typography variant="subtitle1">Media Concurrencies</Typography>
+                  <TableContainer component={Paper} variant="outlined">
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Channel</TableCell>
+                          <TableCell>Concurrency</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {profileData?.RoutingProfile?.MediaConcurrencies?.map((media, index) => (
+                          <TableRow key={index}>
+                            <TableCell>{media.Channel}</TableCell>
+                            <TableCell>{media.Concurrency}</TableCell>
+                          </TableRow>
+                        )) || (
+                          <TableRow>
+                            <TableCell colSpan={2}>No media concurrencies defined</TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Grid>
+                <Grid item xs={12}>
+                  <Typography variant="subtitle1">Queue Configs</Typography>
+                  <TableContainer component={Paper} variant="outlined">
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Queue ID</TableCell>
+                          <TableCell>Priority</TableCell>
+                          <TableCell>Delay</TableCell>
+                          <TableCell>Channel</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {profileData?.RoutingProfile?.QueueConfigs?.map((queue, index) => (
+                          <TableRow key={index}>
+                            <TableCell>{queue.QueueId.slice(0, 8)}...</TableCell>
+                            <TableCell>{queue.Priority}</TableCell>
+                            <TableCell>{queue.Delay}</TableCell>
+                            <TableCell>{queue.Channel}</TableCell>
+                          </TableRow>
+                        )) || (
+                          <TableRow>
+                            <TableCell colSpan={4}>No queue configurations defined</TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        );
+      }
+
+      function QueueDetail({ queue, instanceId, credentials, onRefresh }) {
+        const [queueData, setQueueData] = React.useState(null);
+        const [loading, setLoading] = React.useState(true);
+        const [error, setError] = React.useState(null);
+        
+        React.useEffect(() => {
+          const fetchQueueDetails = async () => {
+            try {
+              const response = await fetch('/api/queue-detail', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                  instanceId, accessKeyId: credentials.accessKeyId,
+                  secretKey: credentials.secretKey, queueId: queue.Id
+                })
+              });
+              const result = await response.json();
+              if (!response.ok) {
+                setError(result.error || 'Error fetching queue details');
+              } else {
+                setQueueData(result);
+              }
+            } catch (err) { setError(err.toString()); }
+            finally { setLoading(false); }
+          };
+          fetchQueueDetails();
+        }, [queue, instanceId, credentials]);
+        
+        if (loading) return <CircularProgress />;
+        if (error) return <Alert severity="error" style={{ marginTop: '1rem' }}>{error}</Alert>;
+        return (
+          <Card className="detail-card">
+            <CardHeader
+              title={`Queue: ${queueData?.Queue?.Name || queue.Name}`}
+              subheader={`ID: ${queueData?.Queue?.QueueId || queue.Id}`}
+            />
+            <CardContent>
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <Typography variant="subtitle1">Description</Typography>
+                  <Typography variant="body2">
+                    {queueData?.Queue?.Description || 'No description available'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12}>
+                  <Typography variant="subtitle1">Queue Details</Typography>
+                  <Typography variant="body2">
+                    Max Contacts: {queueData?.Queue?.MaxContacts || 'Default'}
+                  </Typography>
+                  <Typography variant="body2">
+                    Status: {queueData?.Queue?.Status || 'Active'}
+                  </Typography>
+                  <Typography variant="body2">
+                    Type: {queueData?.Queue?.QueueType || 'Standard'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12}>
+                  <Typography variant="subtitle1">Outbound Config</Typography>
+                  <Typography variant="body2">
+                    Outbound Caller ID Name: {queueData?.Queue?.OutboundCallerConfig?.OutboundCallerIdName || 'Not Set'}
+                  </Typography>
+                  <Typography variant="body2">
+                    Outbound Caller ID Number: {queueData?.Queue?.OutboundCallerConfig?.OutboundCallerIdNumberId || 'Not Set'}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12}>
+                  <Typography variant="subtitle1">Hours of Operation</Typography>
+                  <Chip label={queueData?.Queue?.HoursOfOperationId ? queueData.Queue.HoursOfOperationId.slice(0, 8) + '...' : 'Default'} size="small" />
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        );
+      }
+
+      function GenericDetail({ item, type }) {
+        return (
+          <Card className="detail-card">
+            <CardHeader
+              title={`${type.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} Details`}
+              subheader={item.Name || item.Username || `ID: ${item.Id}`}
+            />
+            <CardContent>
+              <pre style={{ backgroundColor: '#f7f7f7', padding: '16px', borderRadius: '4px', overflow: 'auto' }}>
+                {JSON.stringify(item, null, 2)}
+              </pre>
+            </CardContent>
+          </Card>
+        );
+      }
+
+      // -- Results Viewer Component -----------------------------------------
+      function ResourceViewer({ 
+        data, resourceType, selectedItem, instanceId, credentials, onItemClick, onRefresh
+      }) {
+        if (!data) return null;
+        if (selectedItem) {
+          switch(resourceType) {
+            case 'users': return <UserDetail user={selectedItem} instanceId={instanceId} credentials={credentials} onRefresh={onRefresh} />;
+            case 'routing-profiles': return <RoutingProfileDetail profile={selectedItem} instanceId={instanceId} credentials={credentials} onRefresh={onRefresh} />;
+            case 'queues': return <QueueDetail queue={selectedItem} instanceId={instanceId} credentials={credentials} onRefresh={onRefresh} />;
+            default: return <GenericDetail item={selectedItem} type={resourceType} />;
+          }
+        }
+        if (resourceType === 'users' && data.UserSummaryList) {
+          return <UserTable data={data.UserSummaryList} onItemClick={onItemClick} />;
+        } else if (resourceType === 'routing-profiles' && data.RoutingProfileSummaryList) {
+          return <RoutingProfileTable data={data.RoutingProfileSummaryList} onItemClick={onItemClick} />;
+        } else if (resourceType === 'queues' && data.QueueSummaryList) {
+          return <QueueTable data={data.QueueSummaryList} onItemClick={onItemClick} />;
+        } else if (resourceType === 'security-profiles' && data.SecurityProfileSummaryList) {
+          return <SecurityProfileTable data={data.SecurityProfileSummaryList} onItemClick={onItemClick} />;
+        } else if (resourceType === 'hours-of-operations' && data.HoursOfOperationSummaryList) {
+          return <HoursOfOperationTable data={data.HoursOfOperationSummaryList} onItemClick={onItemClick} />;
+        } else if (resourceType === 'contact-flows' && data.ContactFlowSummaryList) {
+          return <ContactFlowTable data={data.ContactFlowSummaryList} onItemClick={onItemClick} />;
+        }
+        return (
+          <pre style={{ backgroundColor: '#f4f4f4', padding: '1rem', marginTop: '1rem', borderRadius: '4px', overflow: 'auto' }}>
             {JSON.stringify(data, null, 2)}
           </pre>
         );
       }
 
       // -- Main App ----------------------------------------------------------
-
       function App() {
         const [instanceId, setInstanceId] = React.useState('');
         const [accessKeyId, setAccessKeyId] = React.useState('');
         const [secretKey, setSecretKey] = React.useState('');
-        const [data, setData] = React.useState(null);
-        const [error, setError] = React.useState('');
+        const [currentView, setCurrentView] = React.useState('dashboard');
+        const [resourceData, setResourceData] = React.useState(null);
+        const [selectedResource, setSelectedResource] = React.useState(null);
         const [loading, setLoading] = React.useState(false);
+        const [error, setError] = React.useState('');
+        const [snackbarOpen, setSnackbarOpen] = React.useState(false);
+        const [snackbarMessage, setSnackbarMessage] = React.useState('');
+        const credentials = { accessKeyId, secretKey };
 
-        // Generic fetch function
-        const fetchData = async (endpoint) => {
+        const fetchResource = async (resourceType) => {
           setLoading(true);
           setError('');
-          setData(null);
+          setResourceData(null);
+          setSelectedResource(null);
           try {
-            const response = await fetch(endpoint, {
+            const response = await fetch(`/api/${resourceType}`, {
               method: 'POST',
               headers: {'Content-Type': 'application/json'},
               body: JSON.stringify({ instanceId, accessKeyId, secretKey })
@@ -159,19 +671,34 @@ INDEX_HTML = """<!DOCTYPE html>
             const result = await response.json();
             if (!response.ok) {
               setError(result.error || 'Error fetching data');
+              setSnackbarMessage(result.error || 'Error fetching data');
+              setSnackbarOpen(true);
             } else {
-              setData(result);
+              setResourceData(result);
             }
           } catch (err) {
             setError(err.toString());
+            setSnackbarMessage(err.toString());
+            setSnackbarOpen(true);
           }
           setLoading(false);
         };
 
-        // Export data as text
+        const onNavigate = (view) => {
+          setCurrentView(view);
+          setResourceData(null);
+          setSelectedResource(null);
+          if (view !== 'dashboard') {
+            fetchResource(view);
+          }
+        };
+
+        const onItemClick = (resourceType, id, item) => { setSelectedResource(item); };
+        const onRefresh = () => { if (currentView !== 'dashboard') fetchResource(currentView); };
+
         const exportData = () => {
-          if (!data) return;
-          const fileData = JSON.stringify(data, null, 2);
+          if (!resourceData) return;
+          const fileData = JSON.stringify(resourceData, null, 2);
           const blob = new Blob([fileData], {type: 'text/plain'});
           const url = URL.createObjectURL(blob);
           const link = document.createElement('a');
@@ -182,101 +709,49 @@ INDEX_HTML = """<!DOCTYPE html>
           document.body.removeChild(link);
         };
 
+        const handleSnackbarClose = () => { setSnackbarOpen(false); };
+
         return (
-          <Container maxWidth="md" style={{ marginTop: '2rem' }}>
+          <Container maxWidth="lg" style={{ marginTop: '2rem' }}>
             <Paper style={{ padding: '2rem' }}>
-              <Typography variant="h4" gutterBottom>
-                AWS Connect Dashboard
-              </Typography>
-              <TextField
-                label="AWS Connect Instance ID"
-                fullWidth
-                margin="normal"
-                value={instanceId}
-                onChange={(e) => setInstanceId(e.target.value)}
-              />
-              <TextField
-                label="AWS Access Key ID"
-                fullWidth
-                margin="normal"
-                value={accessKeyId}
-                onChange={(e) => setAccessKeyId(e.target.value)}
-              />
-              <TextField
-                label="AWS Secret Key"
-                type="password"
-                fullWidth
-                margin="normal"
-                value={secretKey}
-                onChange={(e) => setSecretKey(e.target.value)}
-              />
-
-              <div style={{ marginTop: '1rem' }}>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={() => fetchData('/api/users')}
-                  style={{ marginRight: '0.5rem' }}
-                >
-                  Fetch Users
-                </Button>
-                <Button
-                  variant="contained"
-                  color="secondary"
-                  onClick={() => fetchData('/api/routing-profiles')}
-                  style={{ marginRight: '0.5rem' }}
-                >
-                  Fetch Routing Profiles
-                </Button>
-                <Button
-                  variant="contained"
-                  style={{ marginRight: '0.5rem' }}
-                  onClick={() => fetchData('/api/queues')}
-                >
-                  Fetch Queues
-                </Button>
-                <Button
-                  variant="contained"
-                  style={{ marginRight: '0.5rem' }}
-                  onClick={() => fetchData('/api/security-profiles')}
-                >
-                  Fetch Security Profiles
-                </Button>
-                <Button
-                  variant="contained"
-                  style={{ marginRight: '0.5rem' }}
-                  onClick={() => fetchData('/api/hours-of-operations')}
-                >
-                  Fetch Hours
-                </Button>
-                <Button
-                  variant="contained"
-                  style={{ marginRight: '0.5rem' }}
-                  onClick={() => fetchData('/api/contact-flows')}
-                >
-                  Fetch Contact Flows
-                </Button>
-              </div>
-
-              {loading && (
-                <Typography variant="body1" style={{ marginTop: '1rem' }}>
-                  Loading...
-                </Typography>
-              )}
-              {error && (
-                <Typography variant="body1" color="error" style={{ marginTop: '1rem' }}>
-                  {error}
-                </Typography>
-              )}
-
-              {/* Display results in a specialized table or raw JSON */}
-              <ResultsViewer data={data} />
-
-              {data && (
-                <Button variant="outlined" onClick={exportData} style={{ marginTop: '1rem' }}>
-                  Export Data
-                </Button>
-              )}
+              <AppBar position="static" style={{ marginBottom: '1rem' }}>
+                <Toolbar>
+                  <IconButton edge="start" color="inherit" aria-label="menu">
+                    <Icon icon="menu" />
+                  </IconButton>
+                  <Typography variant="h6">AWS Connect Dashboard</Typography>
+                </Toolbar>
+              </AppBar>
+              <Grid container spacing={3}>
+                <Grid item xs={12} md={3}>
+                  <Navigation onNavigate={onNavigate} currentView={currentView} />
+                </Grid>
+                <Grid item xs={12} md={9}>
+                  <BreadcrumbNav path={currentView} onNavigate={onNavigate} />
+                  {currentView === 'dashboard' ? (
+                    <Dashboard onNavigate={onNavigate} />
+                  ) : (
+                    <>
+                      <Box mb={2}>
+                        <TextField label="AWS Connect Instance ID" fullWidth margin="normal" value={instanceId} onChange={(e) => setInstanceId(e.target.value)} />
+                        <TextField label="AWS Access Key ID" fullWidth margin="normal" value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} />
+                        <TextField label="AWS Secret Key" type="password" fullWidth margin="normal" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} />
+                      </Box>
+                      {loading && <CircularProgress />}
+                      {error && <Alert severity="error" style={{ marginTop: '1rem' }}>{error}</Alert>}
+                      <ResourceViewer data={resourceData} resourceType={currentView} selectedItem={selectedResource} instanceId={instanceId} credentials={credentials} onItemClick={onItemClick} onRefresh={onRefresh} />
+                      {resourceData && !selectedResource && (
+                        <Box mt={2}>
+                          <Button variant="outlined" onClick={exportData}>Export Data</Button>
+                        </Box>
+                      )}
+                    </>
+                  )}
+                </Grid>
+              </Grid>
+              <Snackbar open={snackbarOpen} autoHideDuration={6000} onClose={handleSnackbarClose} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}>
+                <Alert onClose={handleSnackbarClose} severity="error">{snackbarMessage}</Alert>
+              </Snackbar>
             </Paper>
           </Container>
         );
@@ -288,129 +763,258 @@ INDEX_HTML = """<!DOCTYPE html>
 </html>
 """
 
+# ---------------- Flask API Endpoints ----------------
+
 @app.route("/")
 def index():
-    # Return the raw HTML so that Jinja doesn't parse the curly braces
     return Response(INDEX_HTML, mimetype="text/html")
 
-# -- API Routes --------------------------------------------------------------
-
+# List Users
 @app.route("/api/users", methods=["POST"])
 def get_users():
     data = request.get_json()
     instance_id = data.get("instanceId")
     access_key_id = data.get("accessKeyId")
     secret_key = data.get("secretKey")
-
     try:
-        connect_client = boto3.client(
-            "connect",
-            region_name="eu-west-2",
-            aws_access_key_id=access_key_id,
-            aws_secret_access_key=secret_key,
-        )
-        response = connect_client.list_users(InstanceId=instance_id)
+        client = boto3.client("connect", region_name="eu-west-2",
+                                aws_access_key_id=access_key_id,
+                                aws_secret_access_key=secret_key)
+        response = client.list_users(InstanceId=instance_id)
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# List Routing Profiles
 @app.route("/api/routing-profiles", methods=["POST"])
 def get_routing_profiles():
     data = request.get_json()
     instance_id = data.get("instanceId")
     access_key_id = data.get("accessKeyId")
     secret_key = data.get("secretKey")
-
     try:
-        connect_client = boto3.client(
-            "connect",
-            region_name="eu-west-2",
-            aws_access_key_id=access_key_id,
-            aws_secret_access_key=secret_key,
-        )
-        response = connect_client.list_routing_profiles(InstanceId=instance_id)
+        client = boto3.client("connect", region_name="eu-west-2",
+                                aws_access_key_id=access_key_id,
+                                aws_secret_access_key=secret_key)
+        response = client.list_routing_profiles(InstanceId=instance_id)
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# List Queues
 @app.route("/api/queues", methods=["POST"])
 def get_queues():
     data = request.get_json()
     instance_id = data.get("instanceId")
     access_key_id = data.get("accessKeyId")
     secret_key = data.get("secretKey")
-
     try:
-        connect_client = boto3.client(
-            "connect",
-            region_name="eu-west-2",
-            aws_access_key_id=access_key_id,
-            aws_secret_access_key=secret_key,
-        )
-        response = connect_client.list_queues(InstanceId=instance_id)
+        client = boto3.client("connect", region_name="eu-west-2",
+                                aws_access_key_id=access_key_id,
+                                aws_secret_access_key=secret_key)
+        response = client.list_queues(InstanceId=instance_id)
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# List Security Profiles
 @app.route("/api/security-profiles", methods=["POST"])
 def get_security_profiles():
     data = request.get_json()
     instance_id = data.get("instanceId")
     access_key_id = data.get("accessKeyId")
     secret_key = data.get("secretKey")
-
     try:
-        connect_client = boto3.client(
-            "connect",
-            region_name="eu-west-2",
-            aws_access_key_id=access_key_id,
-            aws_secret_access_key=secret_key,
-        )
-        response = connect_client.list_security_profiles(InstanceId=instance_id)
+        client = boto3.client("connect", region_name="eu-west-2",
+                                aws_access_key_id=access_key_id,
+                                aws_secret_access_key=secret_key)
+        response = client.list_security_profiles(InstanceId=instance_id)
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# List Hours of Operations
 @app.route("/api/hours-of-operations", methods=["POST"])
 def get_hours_of_operations():
     data = request.get_json()
     instance_id = data.get("instanceId")
     access_key_id = data.get("accessKeyId")
     secret_key = data.get("secretKey")
-
     try:
-        connect_client = boto3.client(
-            "connect",
-            region_name="eu-west-2",
-            aws_access_key_id=access_key_id,
-            aws_secret_access_key=secret_key,
-        )
-        response = connect_client.list_hours_of_operations(InstanceId=instance_id)
+        client = boto3.client("connect", region_name="eu-west-2",
+                                aws_access_key_id=access_key_id,
+                                aws_secret_access_key=secret_key)
+        response = client.list_hours_of_operations(InstanceId=instance_id)
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# List Contact Flows
 @app.route("/api/contact-flows", methods=["POST"])
 def get_contact_flows():
     data = request.get_json()
     instance_id = data.get("instanceId")
     access_key_id = data.get("accessKeyId")
     secret_key = data.get("secretKey")
-
     try:
-        connect_client = boto3.client(
-            "connect",
-            region_name="eu-west-2",
-            aws_access_key_id=access_key_id,
-            aws_secret_access_key=secret_key,
-        )
-        response = connect_client.list_contact_flows(InstanceId=instance_id)
+        client = boto3.client("connect", region_name="eu-west-2",
+                                aws_access_key_id=access_key_id,
+                                aws_secret_access_key=secret_key)
+        response = client.list_contact_flows(InstanceId=instance_id)
         return jsonify(response)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ---------------------------------------------------------------------------
+# Get User Detail
+@app.route("/api/user-detail", methods=["POST"])
+def user_detail():
+    data = request.get_json()
+    instance_id = data.get("instanceId")
+    access_key_id = data.get("accessKeyId")
+    secret_key = data.get("secretKey")
+    user_id = data.get("userId")
+    try:
+        client = boto3.client("connect", region_name="eu-west-2",
+                                aws_access_key_id=access_key_id,
+                                aws_secret_access_key=secret_key)
+        response = client.describe_user(InstanceId=instance_id, UserId=user_id)
+        return jsonify(response)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Get Routing Profile Detail
+@app.route("/api/routing-profile-detail", methods=["POST"])
+def routing_profile_detail():
+    data = request.get_json()
+    instance_id = data.get("instanceId")
+    access_key_id = data.get("accessKeyId")
+    secret_key = data.get("secretKey")
+    routing_profile_id = data.get("routingProfileId")
+    try:
+        client = boto3.client("connect", region_name="eu-west-2",
+                                aws_access_key_id=access_key_id,
+                                aws_secret_access_key=secret_key)
+        response = client.describe_routing_profile(InstanceId=instance_id, RoutingProfileId=routing_profile_id)
+        return jsonify(response)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Get Queue Detail
+@app.route("/api/queue-detail", methods=["POST"])
+def queue_detail():
+    data = request.get_json()
+    instance_id = data.get("instanceId")
+    access_key_id = data.get("accessKeyId")
+    secret_key = data.get("secretKey")
+    queue_id = data.get("queueId")
+    try:
+        client = boto3.client("connect", region_name="eu-west-2",
+                                aws_access_key_id=access_key_id,
+                                aws_secret_access_key=secret_key)
+        response = client.describe_queue(InstanceId=instance_id, QueueId=queue_id)
+        return jsonify(response)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ---------------- Additional Endpoints ----------------
+
+# Real-time Metrics Endpoint
+@app.route("/api/metrics/realtime", methods=["POST"])
+def metrics_realtime():
+    data = request.get_json()
+    instance_id = data.get("instanceId")
+    access_key_id = data.get("accessKeyId")
+    secret_key = data.get("secretKey")
+    try:
+        client = boto3.client("connect", region_name="eu-west-2",
+                                aws_access_key_id=access_key_id,
+                                aws_secret_access_key=secret_key)
+        # Example: Get current metrics for all queues
+        response = client.get_current_metric_data(
+            InstanceId=instance_id,
+            Filters={"Queues": []},
+            CurrentMetrics=[
+                {"Name": "AGENTS_AVAILABLE", "Unit": "COUNT"},
+                {"Name": "CONTACTS_IN_QUEUE", "Unit": "COUNT"}
+            ],
+            NextToken=""
+        )
+        return jsonify(response)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Historical Metrics Endpoint
+@app.route("/api/metrics/historical", methods=["POST"])
+def metrics_historical():
+    data = request.get_json()
+    instance_id = data.get("instanceId")
+    access_key_id = data.get("accessKeyId")
+    secret_key = data.get("secretKey")
+    # For demonstration, use fixed dates; in production, pass dates as parameters.
+    try:
+        client = boto3.client("connect", region_name="eu-west-2",
+                                aws_access_key_id=access_key_id,
+                                aws_secret_access_key=secret_key)
+        response = client.get_metric_data(
+            InstanceId=instance_id,
+            StartTime="2021-01-01T00:00:00Z",
+            EndTime="2021-01-01T01:00:00Z",
+            Filters={"Queues": []},
+            HistoricalMetrics=[
+                {"Name": "CONTACTS_HANDLED", "Unit": "COUNT", "Statistic": "SUM"}
+            ]
+        )
+        return jsonify(response)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Contact History Endpoint (stub using SearchContacts)
+@app.route("/api/contact-history", methods=["POST"])
+def contact_history():
+    data = request.get_json()
+    instance_id = data.get("instanceId")
+    access_key_id = data.get("accessKeyId")
+    secret_key = data.get("secretKey")
+    try:
+        client = boto3.client("connect", region_name="eu-west-2",
+                                aws_access_key_id=access_key_id,
+                                aws_secret_access_key=secret_key)
+        # Note: In production, provide SearchCriteria; here we use an empty filter as a demo.
+        response = client.search_contacts(
+            InstanceId=instance_id,
+            Filters={}
+        )
+        return jsonify(response)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# List Phone Numbers Endpoint
+@app.route("/api/phone-numbers", methods=["POST"])
+def phone_numbers():
+    data = request.get_json()
+    instance_id = data.get("instanceId")
+    access_key_id = data.get("accessKeyId")
+    secret_key = data.get("secretKey")
+    try:
+        client = boto3.client("connect", region_name="eu-west-2",
+                                aws_access_key_id=access_key_id,
+                                aws_secret_access_key=secret_key)
+        response = client.list_phone_numbers(InstanceId=instance_id)
+        return jsonify(response)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Voice ID Endpoint (Stub)
+@app.route("/api/voice-id", methods=["POST"])
+def voice_id():
+    # In production, use boto3.client('voiceid') and implement actual calls.
+    return jsonify({"message": "Voice ID integration not implemented in this demo."})
+
+# Contact Trace Endpoint (Stub)
+@app.route("/api/contact-trace", methods=["POST"])
+def contact_trace():
+    # In production, implement contact trace retrieval (e.g., from S3 or a database).
+    return jsonify({"message": "Contact trace functionality not implemented in this demo."})
 
 if __name__ == "__main__":
-    # Launch the Flask development server
     app.run(debug=True)
