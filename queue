@@ -56,7 +56,7 @@ INDEX_HTML = """<!DOCTYPE html>
         List, ListItem, ListItemIcon, ListItemText, Breadcrumbs, Link,
         Card, CardContent, CardHeader, CircularProgress, AppBar, Toolbar,
         IconButton, Snackbar, Alert, Chip, Table, TableBody, TableCell,
-        TableContainer, TableHead, TableRow
+        TableContainer, TableHead, TableRow, Pagination
       } = MaterialUI;
 
       // -- Icon Component --------------------------------------------------
@@ -181,31 +181,66 @@ INDEX_HTML = """<!DOCTYPE html>
         );
       }
 
-      // -- Table Components for Listing Entities (limited to 5 entries) ---------------------------
+      // -- Table Components for Listing Entities with Pagination and Search ---------------
       function UserTable({ data, onItemClick }) {
+        const [searchQuery, setSearchQuery] = React.useState("");
+        const [page, setPage] = React.useState(1);
+        const itemsPerPage = 10;
+        
+        // Filter data based on search query (case-insensitive)
+        const filteredData = data.filter(user => 
+          user.Username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          user.Id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          user.Arn.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+        const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+        const paginatedData = filteredData.slice((page - 1) * itemsPerPage, page * itemsPerPage);
+        
         return (
-          <TableContainer component={Paper} style={{ marginTop: '1rem' }}>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell><b>Username</b></TableCell>
-                  <TableCell><b>ID</b></TableCell>
-                  <TableCell><b>ARN</b></TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {data.slice(0, 5).map((user) => (
-                  <TableRow key={user.Id} className="clickable-row" onClick={() => onItemClick('users', user.Id, user)}>
-                    <TableCell>{user.Username}</TableCell>
-                    <TableCell>{user.Id.slice(0, 8)}...</TableCell>
-                    <TableCell>{user.Arn.slice(0, 30)}...</TableCell>
+          <Box>
+            <TextField
+              label="Search Users"
+              variant="outlined"
+              fullWidth
+              margin="normal"
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+            />
+            <TableContainer component={Paper} style={{ marginTop: '1rem' }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell><b>Username</b></TableCell>
+                    <TableCell><b>ID</b></TableCell>
+                    <TableCell><b>ARN</b></TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                </TableHead>
+                <TableBody>
+                  {paginatedData.map((user) => (
+                    <TableRow key={user.Id} className="clickable-row" onClick={() => onItemClick('users', user.Id, user)}>
+                      <TableCell>{user.Username}</TableCell>
+                      <TableCell>{user.Id.slice(0, 8)}...</TableCell>
+                      <TableCell>{user.Arn.slice(0, 30)}...</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            {totalPages > 1 && (
+              <Box display="flex" justifyContent="center" mt={2}>
+                <Pagination 
+                  count={totalPages} 
+                  page={page} 
+                  onChange={(event, value) => setPage(value)} 
+                />
+              </Box>
+            )}
+          </Box>
         );
       }
+
+      // Similar changes (search & pagination) can be applied to other table components
+      // For brevity, the other tables are still limited to .slice(0, 5) as before.
 
       function RoutingProfileTable({ data, onItemClick }) {
         return (
@@ -610,8 +645,8 @@ INDEX_HTML = """<!DOCTYPE html>
         const [snackbarOpen, setSnackbarOpen] = React.useState(false);
         const [snackbarMessage, setSnackbarMessage] = React.useState('');
 
-        // We'll still pass an object named 'credentials' to child components
-        // but it's empty. The server is now reading them from environment vars.
+        // Since credentials are now provided via environment variables,
+        // we do not pass them via the UI.
         const credentials = {};
 
         const fetchResource = async (resourceType) => {
@@ -739,24 +774,15 @@ def index():
     return Response(INDEX_HTML, mimetype="text/html")
 
 def create_connect_client(data):
-    """
-    Reads credentials & proxy settings from environment variables,
-    only uses 'instanceId' from the POST data.
-    """
-    instance_id = data.get("instanceId", "")
-
-    # 1) Gather credentials from environment
+    # Read credentials from environment variables.
     access_key = os.environ.get("AWS_ACCESS_KEY_ID")
     secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
-    session_token = os.environ.get("AWS_SESSION_TOKEN")  # optional
-
-    # 2) Check if a proxy is set via environment
+    session_token = os.environ.get("AWS_SESSION_TOKEN")
+    # Check for proxy settings.
     proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
     my_config = Config()
     if proxy_url:
         my_config = Config(proxies={"https": proxy_url})
-
-    # 3) Create the Boto3 client
     return boto3.client(
         "connect",
         region_name="eu-west-2",
