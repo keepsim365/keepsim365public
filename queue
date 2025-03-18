@@ -1,6 +1,8 @@
 from flask import Flask, Response, request, jsonify
 import boto3
 import json
+import os
+from botocore.config import Config
 
 app = Flask(__name__)
 
@@ -179,7 +181,7 @@ INDEX_HTML = """<!DOCTYPE html>
         );
       }
 
-      // -- Table Components for Listing Entities ---------------------------
+      // -- Table Components for Listing Entities (limited to 5 entries) ---------------------------
       function UserTable({ data, onItemClick }) {
         return (
           <TableContainer component={Paper} style={{ marginTop: '1rem' }}>
@@ -192,7 +194,7 @@ INDEX_HTML = """<!DOCTYPE html>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {data.map((user) => (
+                {data.slice(0, 5).map((user) => (
                   <TableRow key={user.Id} className="clickable-row" onClick={() => onItemClick('users', user.Id, user)}>
                     <TableCell>{user.Username}</TableCell>
                     <TableCell>{user.Id.slice(0, 8)}...</TableCell>
@@ -217,7 +219,7 @@ INDEX_HTML = """<!DOCTYPE html>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {data.map((profile) => (
+                {data.slice(0, 5).map((profile) => (
                   <TableRow key={profile.Id} className="clickable-row" onClick={() => onItemClick('routing-profiles', profile.Id, profile)}>
                     <TableCell>{profile.Name}</TableCell>
                     <TableCell>{profile.Id.slice(0, 8)}...</TableCell>
@@ -242,7 +244,7 @@ INDEX_HTML = """<!DOCTYPE html>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {data.map((queue) => (
+                {data.slice(0, 5).map((queue) => (
                   <TableRow key={queue.Id} className="clickable-row" onClick={() => onItemClick('queues', queue.Id, queue)}>
                     <TableCell>{queue.Name}</TableCell>
                     <TableCell>{queue.Id.slice(0, 8)}...</TableCell>
@@ -267,7 +269,7 @@ INDEX_HTML = """<!DOCTYPE html>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {data.map((profile) => (
+                {data.slice(0, 5).map((profile) => (
                   <TableRow key={profile.Id} className="clickable-row" onClick={() => onItemClick('security-profiles', profile.Id, profile)}>
                     <TableCell>{profile.Name}</TableCell>
                     <TableCell>{profile.Id.slice(0, 8)}...</TableCell>
@@ -292,7 +294,7 @@ INDEX_HTML = """<!DOCTYPE html>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {data.map((hours) => (
+                {data.slice(0, 5).map((hours) => (
                   <TableRow key={hours.Id} className="clickable-row" onClick={() => onItemClick('hours-of-operations', hours.Id, hours)}>
                     <TableCell>{hours.Name}</TableCell>
                     <TableCell>{hours.Id.slice(0, 8)}...</TableCell>
@@ -317,7 +319,7 @@ INDEX_HTML = """<!DOCTYPE html>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {data.map((flow) => (
+                {data.slice(0, 5).map((flow) => (
                   <TableRow key={flow.Id} className="clickable-row" onClick={() => onItemClick('contact-flows', flow.Id, flow)}>
                     <TableCell>{flow.Name}</TableCell>
                     <TableCell>{flow.Id.slice(0, 8)}...</TableCell>
@@ -342,11 +344,7 @@ INDEX_HTML = """<!DOCTYPE html>
               const response = await fetch('/api/user-detail', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                  instanceId, accessKeyId: credentials.accessKeyId,
-                  secretKey: credentials.secretKey, sessionToken: credentials.sessionToken,
-                  userId: user.Id
-                })
+                body: JSON.stringify({ instanceId, userId: user.Id })
               });
               const result = await response.json();
               if (!response.ok) { setError(result.error || 'Error fetching user details'); }
@@ -355,7 +353,7 @@ INDEX_HTML = """<!DOCTYPE html>
             finally { setLoading(false); }
           };
           fetchUserDetails();
-        }, [user, instanceId, credentials]);
+        }, [user, instanceId]);
         
         if (loading) return <CircularProgress />;
         if (error) return <Alert severity="error" style={{ marginTop: '1rem' }}>{error}</Alert>;
@@ -406,11 +404,7 @@ INDEX_HTML = """<!DOCTYPE html>
               const response = await fetch('/api/routing-profile-detail', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                  instanceId, accessKeyId: credentials.accessKeyId,
-                  secretKey: credentials.secretKey, sessionToken: credentials.sessionToken,
-                  routingProfileId: profile.Id
-                })
+                body: JSON.stringify({ instanceId, routingProfileId: profile.Id })
               });
               const result = await response.json();
               if (!response.ok) { setError(result.error || 'Error fetching routing profile details'); }
@@ -419,7 +413,7 @@ INDEX_HTML = """<!DOCTYPE html>
             finally { setLoading(false); }
           };
           fetchRoutingProfileDetails();
-        }, [profile, instanceId, credentials]);
+        }, [profile, instanceId]);
         
         if (loading) return <CircularProgress />;
         if (error) return <Alert severity="error" style={{ marginTop: '1rem' }}>{error}</Alert>;
@@ -433,15 +427,11 @@ INDEX_HTML = """<!DOCTYPE html>
               <Grid container spacing={2}>
                 <Grid item xs={12}>
                   <Typography variant="subtitle1">Description</Typography>
-                  <Typography variant="body2">
-                    {profileData?.RoutingProfile?.Description || 'No description available'}
-                  </Typography>
+                  <Typography variant="body2">{profileData?.RoutingProfile?.Description || 'No description available'}</Typography>
                 </Grid>
                 <Grid item xs={12}>
                   <Typography variant="subtitle1">Default Outbound Queue</Typography>
-                  <Typography variant="body2">
-                    {profileData?.RoutingProfile?.DefaultOutboundQueueId || 'None'}
-                  </Typography>
+                  <Typography variant="body2">{profileData?.RoutingProfile?.DefaultOutboundQueueId || 'None'}</Typography>
                 </Grid>
                 <Grid item xs={12}>
                   <Typography variant="subtitle1">Media Concurrencies</Typography>
@@ -514,11 +504,7 @@ INDEX_HTML = """<!DOCTYPE html>
               const response = await fetch('/api/queue-detail', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                  instanceId, accessKeyId: credentials.accessKeyId,
-                  secretKey: credentials.secretKey, sessionToken: credentials.sessionToken,
-                  queueId: queue.Id
-                })
+                body: JSON.stringify({ instanceId, queueId: queue.Id })
               });
               const result = await response.json();
               if (!response.ok) { setError(result.error || 'Error fetching queue details'); }
@@ -527,7 +513,7 @@ INDEX_HTML = """<!DOCTYPE html>
             finally { setLoading(false); }
           };
           fetchQueueDetails();
-        }, [queue, instanceId, credentials]);
+        }, [queue, instanceId]);
         
         if (loading) return <CircularProgress />;
         if (error) return <Alert severity="error" style={{ marginTop: '1rem' }}>{error}</Alert>;
@@ -541,30 +527,18 @@ INDEX_HTML = """<!DOCTYPE html>
               <Grid container spacing={2}>
                 <Grid item xs={12}>
                   <Typography variant="subtitle1">Description</Typography>
-                  <Typography variant="body2">
-                    {queueData?.Queue?.Description || 'No description available'}
-                  </Typography>
+                  <Typography variant="body2">{queueData?.Queue?.Description || 'No description available'}</Typography>
                 </Grid>
                 <Grid item xs={12}>
                   <Typography variant="subtitle1">Queue Details</Typography>
-                  <Typography variant="body2">
-                    Max Contacts: {queueData?.Queue?.MaxContacts || 'Default'}
-                  </Typography>
-                  <Typography variant="body2">
-                    Status: {queueData?.Queue?.Status || 'Active'}
-                  </Typography>
-                  <Typography variant="body2">
-                    Type: {queueData?.Queue?.QueueType || 'Standard'}
-                  </Typography>
+                  <Typography variant="body2">Max Contacts: {queueData?.Queue?.MaxContacts || 'Default'}</Typography>
+                  <Typography variant="body2">Status: {queueData?.Queue?.Status || 'Active'}</Typography>
+                  <Typography variant="body2">Type: {queueData?.Queue?.QueueType || 'Standard'}</Typography>
                 </Grid>
                 <Grid item xs={12}>
                   <Typography variant="subtitle1">Outbound Config</Typography>
-                  <Typography variant="body2">
-                    Outbound Caller ID Name: {queueData?.Queue?.OutboundCallerConfig?.OutboundCallerIdName || 'Not Set'}
-                  </Typography>
-                  <Typography variant="body2">
-                    Outbound Caller ID Number: {queueData?.Queue?.OutboundCallerConfig?.OutboundCallerIdNumberId || 'Not Set'}
-                  </Typography>
+                  <Typography variant="body2">Outbound Caller ID Name: {queueData?.Queue?.OutboundCallerConfig?.OutboundCallerIdName || 'Not Set'}</Typography>
+                  <Typography variant="body2">Outbound Caller ID Number: {queueData?.Queue?.OutboundCallerConfig?.OutboundCallerIdNumberId || 'Not Set'}</Typography>
                 </Grid>
                 <Grid item xs={12}>
                   <Typography variant="subtitle1">Hours of Operation</Typography>
@@ -599,7 +573,7 @@ INDEX_HTML = """<!DOCTYPE html>
         if (!data) return null;
         if (selectedItem) {
           switch(resourceType) {
-            case 'users': return <UserDetail user={selectedResource} instanceId={instanceId} credentials={credentials} onRefresh={onRefresh} />;
+            case 'users': return <UserDetail user={selectedItem} instanceId={instanceId} credentials={credentials} onRefresh={onRefresh} />;
             case 'routing-profiles': return <RoutingProfileDetail profile={selectedItem} instanceId={instanceId} credentials={credentials} onRefresh={onRefresh} />;
             case 'queues': return <QueueDetail queue={selectedItem} instanceId={instanceId} credentials={credentials} onRefresh={onRefresh} />;
             default: return <GenericDetail item={selectedItem} type={resourceType} />;
@@ -628,9 +602,6 @@ INDEX_HTML = """<!DOCTYPE html>
       // -- Main App ----------------------------------------------------------
       function App() {
         const [instanceId, setInstanceId] = React.useState('');
-        const [accessKeyId, setAccessKeyId] = React.useState('');
-        const [secretKey, setSecretKey] = React.useState('');
-        const [sessionToken, setSessionToken] = React.useState('');
         const [currentView, setCurrentView] = React.useState('dashboard');
         const [resourceData, setResourceData] = React.useState(null);
         const [selectedResource, setSelectedResource] = React.useState(null);
@@ -638,7 +609,10 @@ INDEX_HTML = """<!DOCTYPE html>
         const [error, setError] = React.useState('');
         const [snackbarOpen, setSnackbarOpen] = React.useState(false);
         const [snackbarMessage, setSnackbarMessage] = React.useState('');
-        const credentials = { accessKeyId, secretKey, sessionToken };
+
+        // We'll still pass an object named 'credentials' to child components
+        // but it's empty. The server is now reading them from environment vars.
+        const credentials = {};
 
         const fetchResource = async (resourceType) => {
           setLoading(true);
@@ -649,7 +623,7 @@ INDEX_HTML = """<!DOCTYPE html>
             const response = await fetch(`/api/${resourceType}`, {
               method: 'POST',
               headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({ instanceId, accessKeyId, secretKey, sessionToken })
+              body: JSON.stringify({ instanceId })
             });
             const result = await response.json();
             if (!response.ok) {
@@ -716,14 +690,25 @@ INDEX_HTML = """<!DOCTYPE html>
                   ) : (
                     <>
                       <Box mb={2}>
-                        <TextField label="AWS Connect Instance ID" fullWidth margin="normal" value={instanceId} onChange={(e) => setInstanceId(e.target.value)} />
-                        <TextField label="AWS Access Key ID" fullWidth margin="normal" value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} />
-                        <TextField label="AWS Secret Key" type="password" fullWidth margin="normal" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} />
-                        <TextField label="AWS Session Token" fullWidth margin="normal" value={sessionToken} onChange={(e) => setSessionToken(e.target.value)} />
+                        <TextField
+                          label="AWS Connect Instance ID"
+                          fullWidth
+                          margin="normal"
+                          value={instanceId}
+                          onChange={(e) => setInstanceId(e.target.value)}
+                        />
                       </Box>
                       {loading && <CircularProgress />}
                       {error && <Alert severity="error" style={{ marginTop: '1rem' }}>{error}</Alert>}
-                      <ResourceViewer data={resourceData} resourceType={currentView} selectedItem={selectedResource} instanceId={instanceId} credentials={credentials} onItemClick={onItemClick} onRefresh={onRefresh} />
+                      <ResourceViewer
+                        data={resourceData}
+                        resourceType={currentView}
+                        selectedItem={selectedResource}
+                        instanceId={instanceId}
+                        credentials={credentials}
+                        onItemClick={onItemClick}
+                        onRefresh={onRefresh}
+                      />
                       {resourceData && !selectedResource && (
                         <Box mt={2}>
                           <Button variant="outlined" onClick={exportData}>Export Data</Button>
@@ -754,17 +739,31 @@ def index():
     return Response(INDEX_HTML, mimetype="text/html")
 
 def create_connect_client(data):
-    # Extract common credentials including session token
-    instance_id = data.get("instanceId")
-    access_key_id = data.get("accessKeyId")
-    secret_key = data.get("secretKey")
-    session_token = data.get("sessionToken")
+    """
+    Reads credentials & proxy settings from environment variables,
+    only uses 'instanceId' from the POST data.
+    """
+    instance_id = data.get("instanceId", "")
+
+    # 1) Gather credentials from environment
+    access_key = os.environ.get("AWS_ACCESS_KEY_ID")
+    secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+    session_token = os.environ.get("AWS_SESSION_TOKEN")  # optional
+
+    # 2) Check if a proxy is set via environment
+    proxy_url = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
+    my_config = Config()
+    if proxy_url:
+        my_config = Config(proxies={"https": proxy_url})
+
+    # 3) Create the Boto3 client
     return boto3.client(
         "connect",
         region_name="eu-west-2",
-        aws_access_key_id=access_key_id,
+        aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
-        aws_session_token=session_token
+        aws_session_token=session_token,
+        config=my_config
     )
 
 @app.route("/api/users", methods=["POST"])
