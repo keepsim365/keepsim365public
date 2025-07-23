@@ -1,159 +1,151 @@
-#!/usr/bin/env python3
-"""
-Repository Consolidator - Extracts all files from a Git repository into a single text file
-Usage: python consolidate_repo.py
-"""
+import boto3
+import csv
+from datetime import datetime, timezone
 
-import os
-import sys
-import subprocess
-import mimetypes
-from pathlib import Path
+# Initialize AWS service clients
+lambda_client = boto3.client('lambda')
+iam_client = boto3.client('iam')
+ec2_client = boto3.client('ec2')
+logs_client = boto3.client('logs')
+sc_client = boto3.client('servicecatalog')
 
-def is_binary_file(filepath):
-    """Check if a file is binary by examining its content."""
-    try:
-        with open(filepath, 'rb') as f:
-            chunk = f.read(1024)
-            if b'\0' in chunk:
-                return True
-        return False
-    except:
-        return True
-
-def get_git_info():
-    """Get basic Git repository information."""
-    try:
-        repo_name = subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], 
-                                          stderr=subprocess.DEVNULL).decode().strip()
-        repo_name = os.path.basename(repo_name)
-        
-        branch = subprocess.check_output(['git', 'branch', '--show-current'], 
-                                       stderr=subprocess.DEVNULL).decode().strip()
-        
-        last_commit = subprocess.check_output(['git', 'log', '-1', '--pretty=format:%h - %s (%an, %ar)'], 
-                                            stderr=subprocess.DEVNULL).decode().strip()
-        
-        return repo_name, branch, last_commit
-    except:
-        return "Unknown", "Unknown", "Unknown"
-
-def get_tracked_files():
-    """Get list of all tracked files in the Git repository."""
-    try:
-        result = subprocess.check_output(['git', 'ls-files'], stderr=subprocess.DEVNULL)
-        return result.decode().strip().split('\n')
-    except:
-        # Fallback to all files if not in a git repo
-        files = []
-        for root, dirs, filenames in os.walk('.'):
-            # Skip common directories
-            dirs[:] = [d for d in dirs if d not in {'.git', 'node_modules', '__pycache__', '.vscode', 'dist', 'build'}]
-            for filename in filenames:
-                files.append(os.path.relpath(os.path.join(root, filename)))
-        return files
-
-def should_include_file(filepath):
-    """Determine if a file should be included in the consolidation."""
-    # Skip directories
-    if not os.path.isfile(filepath):
-        return False
-    
-    # Skip binary extensions
-    binary_extensions = {
-        '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.ico', '.pdf', '.zip', 
-        '.tar', '.gz', '.exe', '.dll', '.so', '.dylib', '.class', '.jar', 
-        '.war', '.ear', '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv'
-    }
-    
-    if Path(filepath).suffix.lower() in binary_extensions:
-        return False
-    
-    # Skip files larger than 1MB
-    try:
-        if os.path.getsize(filepath) > 1024 * 1024:
-            return False
-    except:
-        return False
-    
-    # Check if file is binary
-    if is_binary_file(filepath):
-        return False
-    
-    return True
-
-def consolidate_repository():
-    """Main function to consolidate repository files."""
-    output_file = "consolidated_repository.txt"
-    
-    # Get repository information
-    repo_name, branch, last_commit = get_git_info()
-    
-    # Get all tracked files
-    files = get_tracked_files()
-    
-    print(f"Found {len(files)} files in repository")
-    
-    with open(output_file, 'w', encoding='utf-8', errors='ignore') as outfile:
-        # Write header information
-        outfile.write("=" * 60 + "\n")
-        outfile.write("REPOSITORY CONSOLIDATION\n")
-        outfile.write("=" * 60 + "\n\n")
-        
-        outfile.write(f"Repository: {repo_name}\n")
-        outfile.write(f"Branch: {branch}\n")
-        outfile.write(f"Last Commit: {last_commit}\n")
-        outfile.write(f"Total Files: {len(files)}\n\n")
-        
-        # Write file structure
-        outfile.write("=" * 60 + "\n")
-        outfile.write("REPOSITORY STRUCTURE\n")
-        outfile.write("=" * 60 + "\n\n")
-        
-        for file in sorted(files):
-            outfile.write(f"{file}\n")
-        
-        outfile.write("\n" + "=" * 60 + "\n")
-        outfile.write("FILE CONTENTS\n")
-        outfile.write("=" * 60 + "\n\n")
-        
-        # Process each file
-        processed_count = 0
-        for file in files:
-            if should_include_file(file):
-                try:
-                    outfile.write("\n" + "=" * 70 + "\n")
-                    outfile.write(f"FILE PATH: {file}\n")
-                    outfile.write(f"FILE NAME: {os.path.basename(file)}\n")
-                    outfile.write(f"EXTENSION: {Path(file).suffix}\n")
-                    outfile.write("=" * 70 + "\n")
-                    
-                    with open(file, 'r', encoding='utf-8', errors='ignore') as infile:
-                        content = infile.read()
-                        outfile.write(content)
-                    
-                    outfile.write("\n\n")
-                    processed_count += 1
-                    
-                except Exception as e:
-                    outfile.write(f"Error reading file: {e}\n\n")
-                    
-                print(f"Processed: {file}")
-    
-    print(f"\nConsolidation complete!")
-    print(f"Output file: {output_file}")
-    print(f"Processed {processed_count} files")
-    
-    # Show file size
-    size = os.path.getsize(output_file)
-    if size > 1024 * 1024:
-        print(f"File size: {size / (1024 * 1024):.1f} MB")
+# Helper function to categorize age in months
+def categorize_last_used(days_ago):
+    if days_ago is None:
+        return "No data"
+    months = days_ago * 1.0 / 30.0
+    if months <= 3:
+        return "<=3 months"
+    elif months <= 6:
+        return "3-6 months"
+    elif months <= 12:
+        return "6-12 months"
+    elif months <= 24:
+        return "12-24 months"
     else:
-        print(f"File size: {size / 1024:.1f} KB")
+        return ">24 months"
 
-if __name__ == "__main__":
-    if not os.path.exists('.git') and not any(os.path.exists(f) for f in os.listdir('.')):
-        print("Warning: This doesn't appear to be a Git repository")
-        print("The script will still work but may include unwanted files")
-    
-    consolidate_repository()
+# 1. Audit Lambda Functions
+lambda_fields = ["FunctionName", "CreationDate", "LastInvoked", "LastInvokedAgeDays", "UsageCategory", "Notes"]
+with open("lambdas_report.csv", "w", newline='') as lf:
+    writer = csv.writer(lf)
+    writer.writerow(lambda_fields)
+    # Paginate through all Lambda functions
+    paginator = lambda_client.get_paginator('list_functions')
+    for page in paginator.paginate():
+        for func in page['Functions']:
+            name = func['FunctionName']
+            # Parse last modified time as creation (assuming no code updates after creation in Dev)
+            creation_str = func.get('LastModified')  # e.g. "2023-05-01T12:34:56.000+0000"
+            try:
+                creation_date = datetime.strptime(creation_str, "%Y-%m-%dT%H:%M:%S.%f%z")
+            except Exception:
+                creation_date = None
+            # Determine last invocation via CloudWatch Logs
+            last_invoked = None
+            last_invoked_age = None
+            notes = ""
+            log_group = f"/aws/lambda/{name}"
+            try:
+                streams = logs_client.describe_log_streams(
+                    logGroupName=log_group,
+                    orderBy='LastEventTime',
+                    descending=True,
+                    limit=1
+                )
+                if streams.get('logStreams'):
+                    last_ts = streams['logStreams'][0].get('lastEventTimestamp')
+                    if last_ts:
+                        # lastEventTimestamp is in milliseconds
+                        last_invoked = datetime.fromtimestamp(last_ts/1000.0, tz=timezone.utc)
+                        last_invoked_age = (datetime.now(timezone.utc) - last_invoked).days
+                else:
+                    notes = "No log streams (never invoked?)"
+            except logs_client.exceptions.ResourceNotFoundException:
+                notes = "No log group (never invoked)"
+            # Categorize usage
+            usage_cat = categorize_last_used(last_invoked_age) if last_invoked_age is not None else "Never Invoked"
+            # Write CSV row
+            create_str = creation_date.strftime("%Y-%m-%d %H:%M:%S") if creation_date else "Unknown"
+            last_invoked_str = last_invoked.strftime("%Y-%m-%d %H:%M:%S") if last_invoked else "None"
+            writer.writerow([name, create_str, last_invoked_str, 
+                             f"{last_invoked_age}" if last_invoked_age is not None else "N/A", 
+                             usage_cat, notes])
+
+# 2. Audit IAM Roles
+role_fields = ["RoleName", "CreationDate", "LastUsedDate", "LastUsedAgeDays", "UsageCategory"]
+with open("iam_roles_report.csv", "w", newline='') as rf:
+    writer = csv.writer(rf)
+    writer.writerow(role_fields)
+    paginator = iam_client.get_paginator('list_roles')
+    for page in paginator.paginate():
+        for role in page['Roles']:
+            name = role['RoleName']
+            create_date = role['CreateDate']  # datetime object
+            # Get last used info (may be None if never used or beyond tracking period)
+            last_used_date = None
+            if 'RoleLastUsed' in role and role['RoleLastUsed'].get('LastUsedDate'):
+                last_used_date = role['RoleLastUsed']['LastUsedDate']
+            # Calculate days since last use
+            last_used_age = None
+            if last_used_date:
+                last_used_age = (datetime.now(timezone.utc) - last_used_date.replace(tzinfo=timezone.utc)).days
+            # Determine category
+            usage_cat = categorize_last_used(last_used_age) if last_used_age is not None else "Not used in 400+ days"
+            writer.writerow([
+                name,
+                create_date.strftime("%Y-%m-%d"),
+                last_used_date.strftime("%Y-%m-%d") if last_used_date else "None",
+                f"{last_used_age}" if last_used_age is not None else "N/A",
+                usage_cat
+            ])
+
+# 3. Audit ENIs (Network Interfaces)
+eni_fields = ["ENI_ID", "Status", "AttachedResource", "CreationTime", "LastAttachTime", "Notes"]
+with open("eni_report.csv", "w", newline='') as ef:
+    writer = csv.writer(ef)
+    writer.writerow(eni_fields)
+    enis = ec2_client.describe_network_interfaces()['NetworkInterfaces']
+    for eni in enis:
+        eni_id = eni['NetworkInterfaceId']
+        status = eni['Status']  # 'in-use' or 'available'
+        attached_resource = "None"
+        creation_time = eni.get('TagSet', [{}])  # default if no explicit creation time
+        notes = ""
+        attach_time = None
+        if status == 'in-use':
+            # Identify what it is attached to
+            attachment = eni.get('Attachment', {})
+            attach_time = attachment.get('AttachTime')
+            if 'InstanceId' in attachment:
+                attached_resource = f"EC2 Instance {attachment['InstanceId']}"
+            elif 'InstanceOwnerId' in attachment:
+                # Could be a lambda or other service; description might have the Lambda name or resource info
+                attached_resource = attachment.get('InstanceOwnerId')
+        else:
+            # available (not attached)
+            attach_time = eni.get('Attachment', {}).get('AttachTime')
+            if not attach_time:
+                # If never attached, use update time as creation marker (as a proxy)
+                attach_time = eni.get('AvailabilityZone')  # (We may not have exact creation timestamp)
+            notes = "Orphaned ENI (not attached)"
+        create_str = attach_time.strftime("%Y-%m-%d %H:%M:%S") if isinstance(attach_time, datetime) else "Unknown"
+        writer.writerow([eni_id, status, attached_resource, create_str, create_str, notes])
+
+# 4. Audit Service Catalog products
+sc_fields = ["ProductName", "ProductId", "CreatedTime", "OwnerPortfolio"]
+with open("servicecatalog_products_report.csv", "w", newline='') as sf:
+    writer = csv.writer(sf)
+    writer.writerow(sc_fields)
+    # Use paginator to list all products visible to admin
+    paginator = sc_client.get_paginator('search_products_as_admin')
+    for page in paginator.paginate(PageSize=20):
+        for product_view in page.get('ProductViewDetails', []):
+            product = product_view['ProductViewSummary']
+            name = product['Name']
+            product_id = product['ProductId']
+            owner = product.get('Owner') or "Unknown"
+            # Note: created time might not be directly in summary; could fetch via describe_product_as_admin if needed
+            created_time = product_view.get('CreatedTime')
+            created_str = created_time.strftime("%Y-%m-%d") if isinstance(created_time, datetime) else "Unknown"
+            writer.writerow([name, product_id, created_str, owner])
